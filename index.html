@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDX Editor - Ventarys AI</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Ubuntu Sans"', 'sans-serif'],
+                        mono: ['monospace']
+                    },
+                    colors: {
+                        zinc: {
+                            50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8',
+                            400: '#a1a1aa', 500: '#71717a', 600: '#52525b', 700: '#3f3f46',
+                            800: '#27272a', 900: '#18181b', 950: '#09090b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/devicons/devicon@v2.15.1/devicon.min.css">
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-language_tools.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-beautify.min.js"></script>
+
+    <script src="https://js.puter.com/v2/"></script>
+
+<link rel="stylesheet" href="src/app.css" />
+</head>
+<body class="bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 flex flex-col h-screen transition-colors duration-200 font-sans">
+
+    <!-- Inline Service Worker for Offline CDN Support -->
+    <script>
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+            const swCode = `
+                const CACHE_NAME = 'idx-cdn-offline-v1';
+                self.addEventListener('install', e => e.waitUntil(self.skipWaiting()));
+                self.addEventListener('fetch', e => {
+                    if (e.request.url.match(/^(http|https):/) && (e.request.url.includes('cdn.') || e.request.url.includes('cdnjs.'))) {
+                        e.respondWith(
+                            caches.match(e.request).then(res => res || fetch(e.request).then(fetchRes => {
+                                return caches.open(CACHE_NAME).then(cache => {
+                                    cache.put(e.request, fetchRes.clone());
+                                    return fetchRes;
+                                });
+                            }).catch(() => res))
+                        );
+                    }
+                });
+            `;
+            const blob = new Blob([swCode], {type: 'application/javascript'});
+            navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(console.error);
+        }
+    </script>
+
+    <div id="offline-screen" class="hidden absolute inset-0 z-50 bg-zinc-950 text-zinc-300 flex-col items-center justify-center font-mono">
+        <i class="ri-wifi-off-line text-6xl mb-4 opacity-50"></i>
+        <h1 class="text-3xl font-bold uppercase tracking-widest mb-2 font-sans">Connection Lost</h1>
+        <p class="opacity-70 text-center max-w-md">IDX offline mode is active. CDNs are cached via Service Worker.</p>
+    </div>
+
+    <div class="h-9 flex items-center justify-between px-2 border-b border-zinc-300 dark:border-zinc-800 drag-region bg-zinc-100 dark:bg-zinc-900">
+        
+        <div class="flex items-center gap-1 no-drag h-full">
+            <div class="px-2 flex items-center justify-center">
+                <img src="assets/logo.svg" alt="IDX Logo" class="w-5 h-5 drop-shadow-md dark:invert" onerror="this.outerHTML='<i class=&quot;ri-terminal-box-fill text-xl opacity-90 drop-shadow-md&quot;></i>'">
+            </div>
+
+            <div class="flex items-center h-full relative" id="menu-bar">
+                <div class="relative h-full flex items-center" data-menu="file">
+                    <div class="menu-bar-item menu-trigger">File</div>
+                    <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
+                        <div class="menu-option" onclick="openLocalFolder()"><span>Open Folder...</span><span class="opacity-50">Ctrl+O</span></div>
+                        <div class="menu-option" onclick="saveCurrentFile()"><span>Save</span><span class="opacity-50">Ctrl+S</span></div>
+                        <hr class="border-zinc-300 dark:border-zinc-700 my-1">
+                        <div class="menu-option" onclick="window.electronAPI && window.electronAPI.close()"><span>Exit</span></div>
+                    </div>
+                </div>
+
+                <div class="relative h-full flex items-center" data-menu="edit">
+                    <div class="menu-bar-item menu-trigger">Edit</div>
+                    <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
+                        <div class="menu-option" onclick="formatEditorCode()"><span>Format Code</span><span class="opacity-50">Shift+Alt+F</span></div>
+                        <hr class="border-zinc-300 dark:border-zinc-700 my-1">
+                        <div class="menu-option" onclick="if(aceEditor) aceEditor.undo()"><span>Undo</span><span class="opacity-50">Ctrl+Z</span></div>
+                        <div class="menu-option" onclick="if(aceEditor) aceEditor.redo()"><span>Redo</span><span class="opacity-50">Ctrl+Y</span></div>
+                    </div>
+                </div>
+
+                <div class="relative h-full flex items-center" data-menu="git">
+                    <div class="menu-bar-item menu-trigger">Git</div>
+                    <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
+                        <div class="menu-option" onclick="injectTerminalCommand('git status')"><span><i class="ri-information-line mr-2"></i>Status</span></div>
+                        <div class="menu-option" onclick="injectTerminalCommand('git add .')"><span><i class="ri-add-circle-line mr-2"></i>Add All</span></div>
+                        <div class="menu-option" onclick="promptGitCommit()"><span><i class="ri-message-3-line mr-2"></i>Commit...</span></div>
+                        <hr class="border-zinc-300 dark:border-zinc-700 my-1">
+                        <div class="menu-option" onclick="injectTerminalCommand('git push')"><span><i class="ri-upload-cloud-2-line mr-2"></i>Push</span></div>
+                        <div class="menu-option" onclick="injectTerminalCommand('git pull')"><span><i class="ri-download-cloud-2-line mr-2"></i>Pull</span></div>
+                    </div>
+                </div>
+
+                <div class="relative h-full flex items-center" data-menu="view">
+                    <div class="menu-bar-item menu-trigger">View</div>
+                    <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
+                        <div class="menu-option" id="menu-toggle-theme"><span>Toggle Theme</span></div>
+                        <div class="menu-option" onclick="document.getElementById('btn-toggle-term').click()"><span>Terminal</span><span class="opacity-50">Ctrl+J</span></div>
+                    </div>
+                </div>
+            </div>
+            <span id="window-title-file" class="text-xs opacity-50 ml-4 font-mono"></span>
+        </div>
+
+        <div class="flex items-center gap-1 text-base no-drag h-full">
+            <div id="btn-win-min" class="px-3 h-full flex items-center hover:bg-zinc-200 dark:hover:bg-zinc-800 cursor-pointer transition-colors"><i class="ri-subtract-line"></i></div>
+            <div id="btn-win-max" class="px-3 h-full flex items-center hover:bg-zinc-200 dark:hover:bg-zinc-800 cursor-pointer transition-colors"><i class="ri-checkbox-blank-line scale-75"></i></div>
+            <div id="btn-win-close" class="px-3 h-full flex items-center hover:bg-red-500 hover:text-white cursor-pointer transition-colors text-red-500"><i class="ri-close-line"></i></div>
+        </div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <div class="w-14 flex flex-col items-center py-2 border-r border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 shrink-0">
+            <div class="activity-icon left-activity active" data-panel="explorer" title="Explorer"><i class="ri-file-copy-2-line"></i></div>
+            <div class="activity-icon left-activity" data-panel="search" title="Search"><i class="ri-search-line"></i></div>
+            <div class="activity-icon left-activity" data-panel="git" title="Source Control"><i class="ri-git-merge-line"></i></div>
+            <div class="activity-icon left-activity" data-panel="extensions" title="Governance"><i class="ri-apps-2-line"></i></div>
+            <div class="flex-1"></div>
+            <div class="activity-icon right-activity items-center" data-panel="ai" title="Ventarys AI">
+                <img src="assets/ventarys.png" alt="AI" class="w-7 h-7 object-cover rounded-full shadow-sm dark:invert" onerror="this.outerHTML='<i class=&quot;ri-magic-line text-[1.2em]&quot;></i>'">
+            </div>
+            <div class="activity-icon left-activity" data-panel="settings" title="Settings"><i class="ri-settings-3-line"></i></div>
+        </div>
+
+        <div id="sidebar-panel" class="w-64 flex flex-col border-r border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 transition-all flex-shrink-0 relative">
+            <div id="sidebar-title" class="p-3 uppercase text-xs font-bold opacity-70 tracking-wider">EXPLORER</div>
+            <div id="sidebar-content" class="flex-1 flex flex-col overflow-hidden"></div>
+            <div id="resizer-sidebar" class="resizer-v absolute top-0 right-[-2px] bottom-0"></div>
+        </div>
+
+        <div class="flex-1 flex flex-col min-w-0 bg-zinc-100 dark:bg-zinc-950 relative">
+            <div id="editor-tabs" class="flex overflow-x-auto border-b border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 bg-opacity-50"></div>
+
+            <div class="flex-1 relative font-mono">
+                <div id="editor-placeholder" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 select-none font-sans">
+                    <img src="assets/logo.svg" alt="IDX Logo" class="w-32 h-32 mb-6 drop-shadow-xl opacity-80 dark:invert" onerror="this.outerHTML='<i class=&quot;ri-code-box-line text-8xl mb-6 drop-shadow-xl&quot;></i>'">
+                    <h1 class="text-3xl font-bold uppercase tracking-widest font-sans">IDX Editor</h1>
+                    <div class="mt-8 flex flex-col gap-4 text-xs font-mono items-center">
+                        <span><kbd class="border border-zinc-500 px-1 rounded">Ctrl</kbd> + <kbd class="border border-zinc-500 px-1 rounded">O</kbd> Open Folder</span>
+                        <span><kbd class="border border-zinc-500 px-1 rounded">Shift</kbd> + <kbd class="border border-zinc-500 px-1 rounded">Alt</kbd> + <kbd class="border border-zinc-500 px-1 rounded">F</kbd> Format Code</span>
+                    </div>
+                </div>
+                <div id="ace-container" class="absolute inset-0 hidden outline-none text-base"></div>
+                
+                <div id="inline-ai-box" class="hidden absolute top-10 left-1/2 transform -translate-x-1/2 w-3/4 max-w-2xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-2xl p-2 z-50 flex items-center gap-2 font-sans">
+                    <i class="ri-sparkling-fill text-purple-500"></i>
+                    <input type="text" id="inline-ai-input" placeholder="Ask Ventarys to edit this file... (e.g., Create a sum function and press Enter)" class="flex-1 bg-transparent border-none focus:outline-none text-xs font-sans dark:text-zinc-100">
+                    <button id="inline-ai-close" class="text-xs opacity-50 hover:opacity-100"><i class="ri-close-line"></i></button>
+                </div>
+            </div>
+
+            <div id="terminal-area" class="hidden h-64 flex flex-col bg-zinc-50 dark:bg-[#09090b] relative flex-shrink-0">
+                <div id="resizer-terminal" class="resizer-h absolute top-[-2px] left-0 right-0"></div>
+                <div class="flex justify-between items-center px-3 py-1 text-xs opacity-70 border-b border-t border-zinc-300 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 font-sans font-bold tracking-wider">
+                    <div class="flex gap-4" id="bottom-tabs">
+                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab" data-target="problems-container">PROBLEMS</span>
+                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab" data-target="output-container">OUTPUT</span>
+                        <span class="cursor-pointer border-b-2 border-zinc-800 dark:border-zinc-300 text-zinc-900 dark:text-zinc-100 bottom-tab active" data-target="terminal-container">TERMINAL</span>
+                    </div>
+                    <div class="flex gap-2 text-sm">
+                        <i id="btn-clear-term" class="ri-delete-bin-line cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" title="Clear"></i>
+                        <i id="btn-close-term" class="ri-close-line cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" title="Close Terminal"></i>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-hidden relative p-2 flex flex-col">
+                    <div id="terminal-container" class="absolute inset-2"></div>
+                    <div id="problems-container" class="absolute inset-2 hidden overflow-y-auto font-mono text-[11px] p-2">
+                        <div class="opacity-50 flex flex-col items-center justify-center h-full">
+                            <i class="ri-check-line text-2xl mb-2 text-green-500"></i>
+                            No problems detected in workspace.
+                        </div>
+                    </div>
+                    <div id="output-container" class="absolute inset-2 hidden overflow-y-auto font-mono text-[11px] p-2 whitespace-pre-wrap">
+[IDX System] Initializing Output services...
+[Ventarys] System monitor online. Ready to compile complaints.</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="ai-panel" class="hidden w-80 flex flex-col border-l border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 transition-all flex-shrink-0 relative">
+            <div id="resizer-ai" class="resizer-v absolute top-0 left-[-2px] bottom-0"></div>
+            <div class="p-3 uppercase text-xs font-bold opacity-70 tracking-wider flex justify-between items-center border-b border-zinc-300 dark:border-zinc-800 shrink-0 font-sans">
+                <span>VENTARYS AI</span>
+                <div class="flex gap-3 text-sm">
+                    <i class="ri-save-line cursor-pointer hover:text-blue-500" onclick="saveChatToHistory()" title="Save Chat"></i>
+                    <i class="ri-history-line cursor-pointer hover:text-purple-500" onclick="toggleHistoryView()" title="View History"></i>
+                    <i class="ri-close-line cursor-pointer hover:text-red-500" onclick="closeAIPanel()" title="Close"></i>
+                </div>
+            </div>
+            <div id="ai-sidebar-content" class="flex-1 flex flex-col overflow-hidden relative"></div>
+        </div>
+
+    </div>
+
+    <div class="h-6 flex items-center justify-between px-3 text-[11px] font-mono border-t border-zinc-300 dark:border-zinc-800 bg-zinc-200 dark:bg-zinc-900 select-none">
+        <div class="flex items-center gap-4">
+            <span id="status-git-branch" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="document.querySelector('[data-panel=\'git\']').click()"><i class="ri-git-branch-line"></i> No Git</span>
+            <span class="flex items-center gap-1 cursor-pointer hover:opacity-70"><i class="ri-refresh-line"></i></span>
+            <span id="status-problems" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="openProblemsTab()"><i class="ri-error-warning-line"></i> 0 <i class="ri-alert-line ml-1"></i> 0</span>
+        </div>
+        <div class="flex items-center gap-4">
+            <span id="status-os" class="opacity-70">Detecting OS...</span>
+            <span id="status-encoding" class="hidden">UTF-8</span>
+            <span id="status-lang" class="hidden">TXT</span>
+            <span id="btn-toggle-term" class="cursor-pointer hover:opacity-70 text-sm"><i class="ri-terminal-box-line"></i></span>
+        </div>
+    </div>
+
+    <input type="file" id="ai-attachment-input" class="hidden" multiple>
+
+    <script src="src/app.js"></script>
+</body>
+</html>

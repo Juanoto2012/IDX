@@ -1,0 +1,59 @@
+     @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800&display=swap');
+        
+        /* Base styles and UI - Ubuntu Sans Applied Globally */
+        body { margin: 0; overflow: hidden; user-select: none; font-family: 'Ubuntu Sans', Tahoma, Geneva, Verdana, sans-serif; }
+        .drag-region { -webkit-app-region: drag; }
+        .no-drag { -webkit-app-region: no-drag; }
+        
+        /* Monochromatic Scrollbars */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        .dark ::-webkit-scrollbar-track { background: #09090b; }
+        .dark ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+        html:not(.dark) ::-webkit-scrollbar-track { background: #fafafa; }
+        html:not(.dark) ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 4px; }
+        html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+        /* Markdown AI Styles */
+        .markdown-body p { margin-bottom: 0.5em; user-select: text; }
+        .markdown-body pre { background: rgba(0,0,0,0.2); padding: 0.5em; border-radius: 4px; overflow-x: auto; margin-top: 0.5em; margin-bottom: 0.5em; border: 1px solid rgba(128,128,128,0.2); user-select: text;}
+        .markdown-body code { font-family: monospace; font-size: 0.9em; user-select: text;}
+        .markdown-body ul { list-style: disc; padding-left: 1.5em; margin-bottom: 0.5em;}
+        .markdown-body h3 { font-size: 1.1em; font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 0.2em; }
+        .markdown-body blockquote { border-left: 3px solid #71717a; padding-left: 0.5em; font-style: italic; opacity: 0.8; }
+
+        /* Activity Icons */
+        .activity-icon {
+            padding: 0.875rem; 
+            font-size: 1.6rem; 
+            cursor: pointer;
+            opacity: 0.5;
+            transition: all 0.2s ease-in-out;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            border-left: 2px solid transparent;
+        }
+        .activity-icon:hover { opacity: 1; }
+        .activity-icon.active { opacity: 1; }
+        html.dark .activity-icon.active { border-left-color: #f4f4f5; }
+        html:not(.dark) .activity-icon.active { border-left-color: #18181b; }
+
+        /* VS Code Menu Styles */
+        .menu-bar-item { padding: 4px 8px; font-size: 12px; cursor: default; border-radius: 4px; }
+        .menu-bar-item:hover, .menu-bar-item.active { background-color: rgba(128,128,128,0.2); }
+        .menu-dropdown { position: absolute; top: 100%; left: 0; min-width: 200px; padding: 4px 0; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 100; font-size: 12px; display: none;}
+        .menu-dropdown.show { display: block; }
+        .menu-option { padding: 6px 12px; display: flex; justify-content: space-between; cursor: default; align-items: center; }
+        .menu-option:hover { background-color: #2563eb; color: white; }
+
+        /* Panel Resizers */
+        .resizer-v { width: 4px; cursor: col-resize; z-index: 10; background: transparent; transition: background 0.2s; }
+        .resizer-v:hover, .resizer-v.active { background: #3b82f6; }
+        .resizer-h { height: 4px; cursor: row-resize; z-index: 10; background: transparent; transition: background 0.2s; }
+        .resizer-h:hover, .resizer-h.active { background: #3b82f6; }
+        
+        .attachment-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 10px; background: rgba(128,128,128,0.2); }
+        
+        .ai-loader svg { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
