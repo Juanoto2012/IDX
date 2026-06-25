@@ -3,6 +3,30 @@ const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
 
+const appVersion = '1.0.0';
+
+function checkForUpdates() {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    https.get('https://api.github.com/repos/Juanoto2012/IDX/releases/latest', (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve({
+            version: parsed.tag_name,
+            url: parsed.html_url,
+            isUpdate: parsed.tag_name !== appVersion
+          });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
 function createWindow() {
   // 1. Crear Splash Screen
   const splash = new BrowserWindow({
@@ -58,15 +82,25 @@ function createWindow() {
   ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
   ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
 
-  // --- OBTENER INFO DEL SISTEMA PARA VENTARYS AI ---
-  ipcMain.handle('get-os-info', () => {
-    return { 
-      platform: os.platform(), 
-      release: os.release(), 
-      type: os.type(),
-      shell: shell 
-    };
-  });
+// --- OBTENER INFO DEL SISTEMA PARA VENTARYS AI ---
+   ipcMain.handle('get-os-info', () => {
+     return { 
+       platform: os.platform(), 
+       release: os.release(), 
+       type: os.type(),
+       shell: shell 
+     };
+   });
+
+   // --- UPDATE CHECK ---
+   ipcMain.handle('check-updates', async () => {
+     try {
+       return await checkForUpdates();
+     } catch (e) {
+       return { error: e.message, isUpdate: false };
+     }
+   });
+   ipcMain.handle('get-app-version', () => appVersion);
 
   // --- CONTROLES DE VENTANA ---
   ipcMain.on('window-minimize', () => win.minimize());
