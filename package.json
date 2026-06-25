@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder -wml"
+    "dist": "electron-builder -w"
   },
   "author": "JNTX Studio",
   "license": "MIT",
@@ -37,21 +37,6 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/logo.ico",
       "uninstallerIcon": "assets/logo.ico"
-    },
-    "mac": {
-      "icon": "assets/logo.png",
-      "category": "public.app-category.developer-tools",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "linux": {
-      "icon": "assets/logo.png",
-      "target": [
-        "AppImage",
-        "deb"
-      ]
     }
   }
 }
