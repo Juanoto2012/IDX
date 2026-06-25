@@ -218,12 +218,13 @@
 
     </div>
 
-    <div class="h-6 flex items-center justify-between px-3 text-[11px] font-mono border-t border-zinc-300 dark:border-zinc-800 bg-zinc-200 dark:bg-zinc-900 select-none">
-        <div class="flex items-center gap-4">
-            <span id="status-git-branch" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="document.querySelector('[data-panel=\'git\']').click()"><i class="ri-git-branch-line"></i> No Git</span>
-            <span class="flex items-center gap-1 cursor-pointer hover:opacity-70"><i class="ri-refresh-line"></i></span>
-            <span id="status-problems" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="openProblemsTab()"><i class="ri-error-warning-line"></i> 0 <i class="ri-alert-line ml-1"></i> 0</span>
-        </div>
+<div class="h-6 flex items-center justify-between px-3 text-[11px] font-mono border-t border-zinc-300 dark:border-zinc-800 bg-zinc-200 dark:bg-zinc-900 select-none status-bar-update">
+         <div class="flex items-center gap-4">
+             <span id="status-git-branch" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="document.querySelector('[data-panel=\'git\']').click()"><i class="ri-git-branch-line"></i> No Git</span>
+             <span class="flex items-center gap-1 cursor-pointer hover:opacity-70"><i class="ri-refresh-line"></i></span>
+             <span id="status-problems" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="openProblemsTab()"><i class="ri-error-warning-line"></i> 0 <i class="ri-alert-line ml-1"></i> 0</span>
+             <span id="status-update" class="hidden items-center gap-1 cursor-pointer hover:text-blue-500" onclick="openReleases()"><i class="ri-radar-line"></i> Update available</span>
+         </div>
         <div class="flex items-center gap-4">
             <span id="status-os" class="opacity-70">Detecting OS...</span>
             <span id="status-encoding" class="hidden">UTF-8</span>
