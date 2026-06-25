@@ -24,17 +24,17 @@
       "output": "dist"
     },
     "mac": {
-      "icon": "logo.svg",
+      "icon": "logo.png",
       "category": "public.app-category.developer-tools"
     },
     "win": {
-      "icon": "logo.svg",
+      "icon": "logo.png",
       "target": [
         "nsis"
       ]
     },
     "linux": {
-      "icon": "logo.svg",
+      "icon": "logo.png",
       "target": [
         "AppImage"
       ]
