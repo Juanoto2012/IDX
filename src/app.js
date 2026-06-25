@@ -1478,20 +1478,19 @@ Never help without making a sarcastic remark about the code's quality. You do no
             }
         }
         
-        function createUpdateIndicator() {
-            const indicator = document.createElement('span');
-            indicator.className = 'status-bar-update flex items-center gap-1 cursor-pointer hover:opacity-70';
-            indicator.id = 'status-update';
-            document.querySelector('.h-6.flex.items-center.justify-between').querySelector('.flex.gap-4').appendChild(indicator);
-            return indicator;
-        }
-        
-        window.openReleases = () => {
-            if (window.electronAPI && window.electronAPI.getAppVersion) {
-                window.open('https://github.com/Juanoto2012/IDX/releases', '_blank');
-            }
-        }
-        
-        // Check for updates on startup
-        setTimeout(checkForUpdates, 3000);
-        }
+function createUpdateIndicator() {
+             const indicator = document.createElement('span');
+             indicator.className = 'status-bar-update flex items-center gap-1 cursor-pointer hover:opacity-70';
+             indicator.id = 'status-update';
+             document.querySelector('.h-6.flex.items-center.justify-between').querySelector('.flex.gap-4').appendChild(indicator);
+             return indicator;
+         }
+         
+         window.openReleases = () => {
+             if (window.electronAPI && window.electronAPI.getAppVersion) {
+                 window.open('https://github.com/Juanoto2012/IDX/releases', '_blank');
+             }
+         }
+         
+         // Check for updates on startup
+         setTimeout(checkForUpdates, 3000);
