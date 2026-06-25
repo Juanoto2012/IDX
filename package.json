@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder -wml"
   },
   "author": "JNTX Studio",
   "license": "MIT",
@@ -23,20 +23,35 @@
     "directories": {
       "output": "dist"
     },
-    "mac": {
-      "icon": "logo.png",
-      "category": "public.app-category.developer-tools"
-    },
     "win": {
-      "icon": "logo.png",
+      "icon": "assets/logo.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/logo.ico",
+      "uninstallerIcon": "assets/logo.ico",
+      "uninstallDisplayName": "IDX Editor"
+    },
+    "mac": {
+      "icon": "assets/logo.png",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
       ]
     },
     "linux": {
-      "icon": "logo.png",
+      "icon": "assets/logo.png",
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ]
     }
   }

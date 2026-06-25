@@ -35,7 +35,7 @@ function createWindow() {
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    icon: path.join(__dirname, 'assets/logo.png')
+    icon: path.join(__dirname, 'assets/logo.ico')
   });
   splash.loadFile('splash.html');
 
@@ -43,9 +43,9 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    frame: false, // Ocultamos el marco para usar nuestro título
-    show: false,  // No mostrar hasta que cargue
-    icon: path.join(__dirname, 'assets/logo.png'), // Icono oficial de Electron
+    frame: false,
+    show: false,
+    icon: path.join(__dirname, 'assets/logo.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
