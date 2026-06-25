@@ -36,9 +36,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "assets/logo.ico",
-      "uninstallerIcon": "assets/logo.ico",
-      "uninstallDisplayName": "IDX Editor",
-      "include": "build/installer.nsh"
+      "uninstallerIcon": "assets/logo.ico"
     },
     "mac": {
       "icon": "assets/logo.png",
