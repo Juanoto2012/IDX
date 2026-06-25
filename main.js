@@ -77,30 +77,30 @@ function createWindow() {
     env: { ...process.env, LANG: 'es_ES.UTF-8' } // Forzar codificación
   });
 
-  // Comunicación bidireccional Terminal <-> Frontend
+// Comunicación bidireccional Terminal <-> Frontend
   ipcMain.on('terminal-input', (event, data) => ptyProcess.write(data));
   ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
   ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
 
-// --- OBTENER INFO DEL SISTEMA PARA VENTARYS AI ---
-   ipcMain.handle('get-os-info', () => {
-     return { 
-       platform: os.platform(), 
-       release: os.release(), 
-       type: os.type(),
-       shell: shell 
-     };
-   });
+  // --- OBTENER INFO DEL SISTEMA PARA VENTARYS AI ---
+  ipcMain.handle('get-os-info', () => {
+    return {
+      platform: os.platform(),
+      release: os.release(),
+      type: os.type(),
+      shell: shell
+    };
+  });
 
-   // --- UPDATE CHECK ---
-   ipcMain.handle('check-updates', async () => {
-     try {
-       return await checkForUpdates();
-     } catch (e) {
-       return { error: e.message, isUpdate: false };
-     }
-   });
-   ipcMain.handle('get-app-version', () => appVersion);
+  // --- UPDATE CHECK ---
+  ipcMain.handle('check-updates', async () => {
+    try {
+      return await checkForUpdates();
+    } catch (e) {
+      return { error: e.message, isUpdate: false };
+    }
+  });
+  ipcMain.handle('get-app-version', () => appVersion);
 
   // --- CONTROLES DE VENTANA ---
   ipcMain.on('window-minimize', () => win.minimize());
