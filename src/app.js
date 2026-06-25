@@ -50,12 +50,25 @@ Never help without making a sarcastic remark about the code's quality. You do no
             setupTerminalToggle();
             setupKeyboardShortcuts();
             setupWindowControls();
-            setupResizers(); 
+            setupResizers();
             setupAttachments();
-            
-            await fetchOsInfo(); 
-            if(getActiveKey()) fetchModels(); 
-            
+
+            await fetchOsInfo();
+            if(getActiveKey()) fetchModels();
+
+            // Restore workspace if saved
+            const savedPath = getSavedWorkspacePath();
+            if (savedPath) {
+                const placeholder = document.getElementById('editor-placeholder');
+                if (placeholder) {
+                    placeholder.innerHTML += `
+                        <div class="mt-6 p-3 bg-zinc-200 dark:bg-zinc-800 rounded cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-700" onclick="restoreWorkspacePrompt('${savedPath}')">
+                            <i class="ri-folder-history-line mr-2"></i>Reopen: ${savedPath}
+                        </div>
+                    `;
+                }
+            }
+
             renderSidebar();
             initAce();
             initTerminal();
@@ -517,23 +530,22 @@ Never help without making a sarcastic remark about the code's quality. You do no
         };
 
         // --- LOCAL FILES & GIT HANDLING ---
-        async function openLocalFolder() {
+async function openLocalFolder(persistPath = null) {
             try {
-                const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const dirHandle = persistPath ? await getDirHandleFromPath(persistPath) : await window.showDirectoryPicker({ mode: 'readwrite' });
+                if (!dirHandle) return;
                 state.fileSystemRoot = { name: dirHandle.name, type: 'folder', handle: dirHandle, children: [], isExpanded: true };
                 await loadDirectoryContents(dirHandle, state.fileSystemRoot.children);
                 await checkGitStatus(dirHandle);
                 renderSidebar();
-                
-                // AUTO CD SYSTEM (Terminal Injection)
-                let absolutePath = null; 
+                saveWorkspacePath(dirHandle.path || dirHandle.name);
+
+                let absolutePath = null;
                 try {
-                    // Recursive function that returns the file and its exact relative path
                     async function findFirstFileWithPath(handle, currentRelativePath = "") {
                         for await (const entry of handle.values()) {
                             if (entry.kind === 'file') {
                                 const file = await entry.getFile();
-                                // Validate if it exposes 'path' (Electron specific)
                                 if (file.path) return { file, relative: currentRelativePath + entry.name };
                             }
                             if (entry.kind === 'directory') {
@@ -548,24 +560,19 @@ Never help without making a sarcastic remark about the code's quality. You do no
                     if (result && result.file && result.file.path) {
                         let normalizedAbsolutePath = result.file.path.replace(/\\/g, '/');
                         let relativePath = result.relative;
-                        
-                        // Calculate exact base path
                         let rootPathLength = normalizedAbsolutePath.length - relativePath.length - 1;
                         absolutePath = result.file.path.substring(0, rootPathLength);
                     }
                 } catch (e) { console.warn("Auto CD Path Resolution Error:", e); }
-                
+
                 if (absolutePath) {
-                    // Clear current line in terminal (Ctrl+U, Ctrl+C)
                     if (window.electronAPI) window.electronAPI.terminalInput('\x15\x03');
-                    
                     setTimeout(() => {
-                        // Standardize string format dynamically targeting Absolute Path exactly.
-                        const cdCmd = `cd "${absolutePath}"`;
-                        injectTerminalCommand(cdCmd);
+                        injectTerminalCommand(`cd "${absolutePath}"`);
                     }, 100);
+                } else if (persistPath) {
+                    injectTerminalCommand(`cd "${persistPath}"`);
                 } else {
-                    // Force terminal open and simulate CD in web mode
                     setTimeout(() => {
                         injectTerminalCommand(`cd "${dirHandle.name}"`);
                         if (!window.electronAPI && xtermInstance) {
@@ -574,6 +581,29 @@ Never help without making a sarcastic remark about the code's quality. You do no
                     }, 100);
                 }
             } catch (err) {}
+        }
+
+        function saveWorkspacePath(path) {
+            localStorage.setItem('idx_workspace_path', path);
+        }
+
+        function getSavedWorkspacePath() {
+            return localStorage.getItem('idx_workspace_path');
+        }
+
+        window.restoreWorkspacePrompt = async (path) => {
+            try {
+                await openLocalFolder(path);
+            } catch (err) {
+                console.warn('Could not restore workspace:', err);
+            }
+        }
+
+async function getDirHandleFromPath(pathName) {
+            if (window.electronAPI) {
+                return await window.electronAPI.getDirectoryHandle(pathName);
+            }
+            return null;
         }
 
         async function checkGitStatus(dirHandle) {

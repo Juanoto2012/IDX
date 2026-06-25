@@ -27,8 +27,37 @@ function checkForUpdates() {
   });
 }
 
+const windowState = {
+  x: undefined,
+  y: undefined,
+  width: 1200,
+  height: 800
+};
+
+try {
+  const fs = require('fs');
+  const stateFile = path.join(app.getPath('userData'), 'window-state.json');
+  if (fs.existsSync(stateFile)) {
+    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    Object.assign(windowState, saved);
+  }
+} catch (e) {}
+
+function saveWindowState(win) {
+  try {
+    const fs = require('fs');
+    const stateFile = path.join(app.getPath('userData'), 'window-state.json');
+    fs.writeFileSync(stateFile, JSON.stringify({
+      x: win.getPosition()[0],
+      y: win.getPosition()[1],
+      width: win.getSize()[0],
+      height: win.getSize()[1],
+      isMaximized: win.isMaximized()
+    }));
+  } catch (e) {}
+}
+
 function createWindow() {
-  // 1. Crear Splash Screen
   const splash = new BrowserWindow({
     width: 450,
     height: 350,
@@ -39,10 +68,11 @@ function createWindow() {
   });
   splash.loadFile('splash.html');
 
-  // 2. Crear Ventana Principal (oculta inicialmente)
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    x: windowState.x,
+    y: windowState.y,
+    width: windowState.width,
+    height: windowState.height,
     frame: false,
     show: false,
     icon: path.join(__dirname, 'assets/logo.ico'),
@@ -53,20 +83,19 @@ function createWindow() {
     }
   });
 
+  if (windowState.isMaximized) win.maximize();
+
   win.loadFile('index.html');
 
-  // 3. Cerrar splash y mostrar app principal cuando esté lista
   win.once('ready-to-show', () => {
     setTimeout(() => {
-      if (!splash.isDestroyed()) {
-         splash.close();
-      }
+      if (!splash.isDestroyed()) splash.close();
       win.show();
-    }, 2500); // Ligero retraso visual para apreciar la carga
+    }, 2500);
   });
 
-  // --- INTEGRACIÓN DE TERMINAL REAL (NODE-PTY) ---
-  // Detectar la shell por defecto (PowerShell en Windows, Bash/Zsh en Unix)
+  win.on('close', () => saveWindowState(win));
+
   const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
   
   const ptyProcess = pty.spawn(shell, [], {
@@ -74,25 +103,20 @@ function createWindow() {
     cols: 80,
     rows: 30,
     cwd: process.env.HOME || process.env.USERPROFILE,
-    env: { ...process.env, LANG: 'es_ES.UTF-8' } // Forzar codificación
+    env: { ...process.env, LANG: 'es_ES.UTF-8' }
   });
 
-// Comunicación bidireccional Terminal <-> Frontend
   ipcMain.on('terminal-input', (event, data) => ptyProcess.write(data));
   ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
   ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
 
-  // --- OBTENER INFO DEL SISTEMA PARA VENTARYS AI ---
-  ipcMain.handle('get-os-info', () => {
-    return {
-      platform: os.platform(),
-      release: os.release(),
-      type: os.type(),
-      shell: shell
-    };
-  });
+  ipcMain.handle('get-os-info', () => ({
+    platform: os.platform(),
+    release: os.release(),
+    type: os.type(),
+    shell: shell
+  }));
 
-  // --- UPDATE CHECK ---
   ipcMain.handle('check-updates', async () => {
     try {
       return await checkForUpdates();
@@ -100,9 +124,8 @@ function createWindow() {
       return { error: e.message, isUpdate: false };
     }
   });
-  ipcMain.handle('get-app-version', () => appVersion);
+ipcMain.handle('get-app-version', () => appVersion);
 
-  // --- CONTROLES DE VENTANA ---
   ipcMain.on('window-minimize', () => win.minimize());
   ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
   ipcMain.on('window-close', () => win.close());
