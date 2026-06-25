@@ -124,7 +124,7 @@ function createWindow() {
       return { error: e.message, isUpdate: false };
     }
   });
-ipcMain.handle('get-app-version', () => appVersion);
+  ipcMain.handle('get-app-version', () => appVersion);
   ipcMain.handle('get-directory-handle', (event, dirPath) => {
     try {
       const savedDir = require('path').resolve(dirPath);
