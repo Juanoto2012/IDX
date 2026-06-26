@@ -8,10 +8,23 @@ const fs = require('fs');
 const appVersion = '1.0.0';
 
 let server = null;
-let baseDir = process.cwd();
+let baseDir = '';
+
+function getResourceDir() {
+  if (!app.isPackaged) {
+    return app.getAppPath();
+  }
+  const resourcePath = process.resourcesPath || path.join(app.getAppPath(), '..', '..', 'resources');
+  const appPath = path.join(resourcePath, 'app');
+  if (fs.existsSync(path.join(appPath, 'index.html'))) {
+    return appPath;
+  }
+  return app.getAppPath();
+}
 
 function startLocalServer() {
   return new Promise((resolve) => {
+    baseDir = getResourceDir();
     server = http.createServer((req, res) => {
       const servePath = req.url === '/' ? '/index.html' : req.url;
       let filePath = path.join(baseDir, servePath);
@@ -89,7 +102,7 @@ function saveWindowState(win) {
   } catch (e) {}
 }
 
-async function loadWindowState() {
+function loadWindowState() {
   try {
     const stateFile = path.join(app.getPath('userData'), 'window-state.json');
     if (fs.existsSync(stateFile)) {
@@ -99,9 +112,8 @@ async function loadWindowState() {
   } catch (e) {}
 }
 
-async function createWindow() {
-  baseDir = app.getAppPath();
-  await loadWindowState();
+function createWindow() {
+  loadWindowState();
   
   const splash = new BrowserWindow({
     width: 450,
@@ -109,81 +121,82 @@ async function createWindow() {
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    icon: path.join(baseDir, 'assets/logo.ico')
+    icon: path.join(__dirname, 'assets/logo.ico')
   });
   splash.loadFile('splash.html');
 
-  const port = await startLocalServer();
-  const win = new BrowserWindow({
-    x: windowState.x,
-    y: windowState.y,
-    width: windowState.width,
-    height: windowState.height,
-    frame: false,
-    show: false,
-    icon: path.join(baseDir, 'assets/logo.ico'),
-    webPreferences: {
-      preload: path.join(baseDir, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-
-  win.loadURL(`http://localhost:${port}/`);
-
-  if (windowState.isMaximized) win.maximize();
-
-  win.once('ready-to-show', () => {
-    setTimeout(() => {
-      if (!splash.isDestroyed()) splash.close();
-      win.show();
-    }, 2500);
-  });
-
-  win.on('close', () => saveWindowState(win));
-
-  const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
-  
-  const ptyProcess = pty.spawn(shell, [], {
-    name: 'xterm-256color',
-    cols: 80,
-    rows: 30,
-    cwd: process.env.HOME || process.env.USERPROFILE,
-    env: { ...process.env, LANG: 'es_ES.UTF-8' }
-  });
-
-  ipcMain.on('terminal-input', (event, data) => ptyProcess.write(data));
-  ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
-  ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
-
-  ipcMain.handle('get-os-info', () => ({
-    platform: os.platform(),
-    release: os.release(),
-    type: os.type(),
-    shell: shell
-  }));
-
-  ipcMain.handle('check-updates', async () => {
-    try {
-      return await checkForUpdates();
-    } catch (e) {
-      return { error: e.message, isUpdate: false };
-    }
-  });
-  ipcMain.handle('get-app-version', () => appVersion);
-  ipcMain.handle('get-directory-handle', (event, dirPath) => {
-    try {
-      const savedDir = path.resolve(dirPath);
-      if (fs.existsSync(savedDir)) {
-        return { name: path.basename(savedDir), path: savedDir };
+  startLocalServer().then(port => {
+    const win = new BrowserWindow({
+      x: windowState.x,
+      y: windowState.y,
+      width: windowState.width,
+      height: windowState.height,
+      frame: false,
+      show: false,
+      icon: path.join(__dirname, 'assets/logo.ico'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false
       }
-    } catch (e) {}
-    return null;
-  });
+    });
 
-  ipcMain.on('window-minimize', () => win.minimize());
-  ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
-  ipcMain.on('window-close', () => win.close());
+    win.loadURL(`http://localhost:${port}/`);
+
+    if (windowState.isMaximized) win.maximize();
+
+    win.once('ready-to-show', () => {
+      setTimeout(() => {
+        if (!splash.isDestroyed()) splash.close();
+        win.show();
+      }, 2500);
+    });
+
+    win.on('close', () => saveWindowState(win));
+
+    const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
+    
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 30,
+      cwd: process.env.HOME || process.env.USERPROFILE,
+      env: { ...process.env, LANG: 'es_ES.UTF-8' }
+    });
+
+    ipcMain.on('terminal-input', (event, data) => ptyProcess.write(data));
+    ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
+    ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
+
+    ipcMain.handle('get-os-info', () => ({
+      platform: os.platform(),
+      release: os.release(),
+      type: os.type(),
+      shell: shell
+    }));
+
+    ipcMain.handle('check-updates', async () => {
+      try {
+        return await checkForUpdates();
+      } catch (e) {
+        return { error: e.message, isUpdate: false };
+      }
+    });
+    ipcMain.handle('get-app-version', () => appVersion);
+    ipcMain.handle('get-directory-handle', (event, dirPath) => {
+      try {
+        const savedDir = path.resolve(dirPath);
+        if (fs.existsSync(savedDir)) {
+          return { name: path.basename(savedDir), path: savedDir };
+        }
+      } catch (e) {}
+      return null;
+    });
+
+    ipcMain.on('window-minimize', () => win.minimize());
+    ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
+    ipcMain.on('window-close', () => win.close());
+  });
 }
 
 app.whenReady().then(() => {
