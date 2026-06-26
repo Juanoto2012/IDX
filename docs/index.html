@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDX Editor - Ventarys AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['"Ubuntu Sans"', 'sans-serif'] },
+                    colors: {
+                        zinc: {
+                            50: '#fafafa', 100: '#f4f4f5', 200: '#e4e4e7', 300: '#d4d4d8',
+                            400: '#a1a1aa', 500: '#71717a', 600: '#52525b', 700: '#3f3f46',
+                            800: '#27272a', 900: '#18181b', 950: '#09090b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="docs.css">
+</head>
+<body class="bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 font-sans transition-colors duration-200 min-h-screen flex flex-col">
+    <div class="h-9 flex items-center justify-between px-2 border-b border-zinc-300 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 drag-region">
+        <div class="flex items-center gap-2 no-drag">
+            <div class="px-2 flex items-center">
+                <img src="../assets/logo.svg" alt="IDX Logo" class="w-5 h-5 dark:invert" onerror="this.outerHTML='<i class=&quot;ri-terminal-box-fill text-xl opacity-90&quot;></i>'">
+            </div>
+            <span class="text-xs font-bold opacity-70">IDX Editor</span>
+        </div>
+        <div class="flex items-center gap-4 text-xs opacity-50 no-drag">
+            <a href="#features" class="hover:opacity-100 cursor-pointer">Features</a>
+            <a href="#download" class="hover:opacity-100 cursor-pointer">Download</a>
+            <a href="https://github.com/Juanoto2012/IDX" target="_blank" class="hover:opacity-100 cursor-pointer"><i class="ri-github-line"></i></a>
+        </div>
+    </div>
+
+    <div class="flex-1 flex flex-col items-center justify-center px-6 py-12">
+        <div class="w-full max-w-2xl">
+            <div class="flex flex-col items-center mb-12">
+                <img src="../assets/logo.svg" alt="IDX" class="w-20 h-20 mb-6 dark:invert" onerror="this.outerHTML='<i class=&quot;ri-terminal-box-fill text-7xl opacity-80&quot;></i>'">
+                <h1 class="text-4xl font-bold mb-3 tracking-wider">IDX EDITOR</h1>
+                <p class="text-sm opacity-70 text-center font-mono mb-8">A modern desktop code editor powered by Ventarys AI, built with Electron.</p>
+                <a href="https://github.com/Juanoto2012/IDX/releases/latest" target="_blank" class="px-6 py-2 bg-zinc-800 text-zinc-100 dark:bg-zinc-200 dark:text-zinc-900 rounded font-bold text-xs hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors shadow-sm">
+                    <i class="ri-download-line"></i> Download v<span id="latest-version">1.0.0</span>
+                </a>
+            </div>
+
+            <div id="features" class="w-full">
+                <div class="text-xs font-bold opacity-50 mb-4 tracking-wider">FEATURES</div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-code-s-slash-line"></i><span>ACE Editor con resaltado</span>
+                    </div>
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-terminal-box-line"></i><span>Terminal integrado</span>
+                    </div>
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-robot-2-line"></i><span>Ventarys AI</span>
+                    </div>
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-git-branch-line"></i><span>Git integrado</span>
+                    </div>
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-folder-open-line"></i><span>Explorador archivos</span>
+                    </div>
+                    <div class="flex items-center gap-2 p-2 border border-zinc-300 dark:border-zinc-800 rounded">
+                        <i class="ri-wifi-off-line"></i><span>Modo offline</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="download" class="mt-8 pt-6 border-t border-zinc-300 dark:border-zinc-800">
+                <div class="text-xs font-bold opacity-50 mb-3 tracking-wider">DOWNLOAD</div>
+                <div class="flex gap-2">
+                    <a href="https://github.com/Juanoto2012/IDX/releases/latest" target="_blank" class="flex-1 py-2 bg-zinc-800 text-zinc-100 dark:bg-zinc-200 dark:text-zinc-900 rounded font-bold text-xs hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors flex items-center justify-center gap-1 shadow-sm">
+                        <i class="ri-download-cloud-line"></i> Windows
+                    </a>
+                    <a href="https://github.com/Juanoto2012/IDX/releases" target="_blank" class="flex-1 py-2 border border-zinc-300 dark:border-zinc-700 rounded font-bold text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-1 shadow-sm">
+                        <i class="ri-list-unordered"></i> Releases
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-6 flex items-center justify-center text-[10px] opacity-50 border-t border-zinc-300 dark:border-zinc-800 font-mono">
+        <span>&copy; 2026 JNTX Studio - IDX Editor</span>
+    </div>
+
+    <script>
+        fetch('https://api.github.com/repos/Juanoto2012/IDX/releases/latest')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('latest-version').textContent = data.tag_name || '1.0.0';
+            })
+            .catch(() => {});
+    </script>
+</body>
+</html>

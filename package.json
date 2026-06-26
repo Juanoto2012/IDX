@@ -1,0 +1,13 @@
+{
+  "name": "idx-editor",
+  "version": "1.0.0",
+  "description": "IDX Editor powered by Ventarys AI",
+  "license": "MIT",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@tauri-apps/cli": "^1"
+  }
+}

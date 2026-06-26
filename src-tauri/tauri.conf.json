@@ -1,0 +1,37 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "IDX Editor",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "targets": "nsis",
+      "identifier": "com.ventarys.idx",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.ico"
+      ]
+    },
+    "windows": [
+      {
+        "title": "IDX Editor",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://api.github.com https://api.aquadevs.com https://apihub.agnes-ai.com;"
+    }
+  }
+}

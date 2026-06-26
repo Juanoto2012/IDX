@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciando IDX...</title>
+    <style>
+        body { margin: 0; background: #09090b; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Segoe UI', sans-serif; color: white; }
+        .logo { width: 100px; height: 100px; animation: pulse 2s infinite; filter: invert(1); }
+        @keyframes pulse { 0% { opacity: 0.7; } 50% { opacity: 1; } 100% { opacity: 0.7; } }
+        .loader { margin-top: 30px; width: 150px; height: 2px; background: #27272a; position: relative; overflow: hidden; }
+        .loader::after { content: ''; position: absolute; height: 100%; width: 50%; background: #3b82f6; animation: slide 1.5s infinite; }
+        @keyframes slide { 0% { left: -50%; } 100% { left: 100%; } }
+    </style>
+</head>
+<body>
+    <img src="assets/logo.svg" class="logo">
+    <div class="title" style="margin-top: 24px; font-size: 24px; font-weight: bold;">IDX EDITOR</div>
+    <div class="loader"></div>
+    <div style="margin-top: 12px; font-size: 11px; opacity: 0.5; font-family: monospace;">Cargando...</div>
+</body>
+</html>

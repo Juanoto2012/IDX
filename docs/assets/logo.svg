@@ -1,0 +1,14 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <!-- Cara superior -->
+    <path d="M50 15 L85 32 L50 50 L15 32 Z" fill="#18181b" opacity="0.9"/>
+    <!-- Cara izquierda -->
+    <path d="M15 35 L50 53 L50 85 L15 67 Z" fill="#18181b" opacity="0.7"/>
+    <!-- Cara derecha -->
+    <path d="M85 35 L85 67 L50 85 L50 53 Z" fill="#18181b" opacity="0.4"/>
+    <!-- Hoyo Interno Superior -->
+    <path d="M50 30 L65 37 L50 45 L35 37 Z" fill="#000000" opacity="0.6"/>
+    <!-- Hoyo Interno Izquierdo -->
+    <path d="M35 40 L50 48 L50 65 L35 57 Z" fill="#000000" opacity="0.8"/>
+    <!-- Hoyo Interno Derecho -->
+    <path d="M65 40 L65 57 L50 65 L50 48 Z" fill="#000000" opacity="0.95"/>
+</svg>

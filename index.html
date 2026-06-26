@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDX Editor - Ventarys AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-language_tools.min.js"></script>
+    <script src="https://js.puter.com/v2/"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-300 font-sans min-h-screen flex flex-col">
+    <header class="h-9 border-b border-zinc-800 bg-zinc-900 flex items-center px-3 justify-between drag-region">
+        <div class="flex items-center gap-2 no-drag">
+            <img src="assets/logo.svg" class="w-5 h-5 invert cursor-pointer" onclick="location.reload()">
+            <span class="text-xs opacity-70">IDX Editor</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs no-drag">
+            <a href="#features" class="px-2 py-1 hover:bg-zinc-800 rounded">Features</a>
+            <a href="#download" class="px-2 py-1 hover:bg-zinc-800 rounded">Download</a>
+            <a href="https://github.com/Juanoto2012/IDX" target="_blank" class="px-2 py-1 hover:bg-zinc-800 rounded"><i class="ri-github-line"></i></a>
+        </div>
+    </header>
+    <main class="flex-1 flex flex-col items-center justify-center p-8">
+        <div class="max-w-2xl w-full text-center">
+            <img src="assets/logo.svg" class="w-24 h-24 mx-auto mb-6 invert">
+            <h1 class="text-4xl font-bold mb-2">IDX Editor</h1>
+            <p class="text-zinc-400 mb-8">A modern desktop code editor powered by Ventarys AI</p>
+            <a href="https://github.com/Juanoto2012/IDX/releases/latest" target="_blank" class="inline-block px-6 py-2 bg-blue-600 rounded font-bold hover:bg-blue-700">Download Latest</a>
+            <div class="grid grid-cols-3 gap-4 mt-12 text-xs">
+                <div class="p-3 border border-zinc-800 rounded"><i class="ri-code-s-slash-line block text-xl mb-1"></i>ACE Editor</div>
+                <div class="p-3 border border-zinc-800 rounded"><i class="ri-terminal-line block text-xl mb-1"></i>Integrated Terminal</div>
+                <div class="p-3 border border-zinc-800 rounded"><i class="ri-robot-2-line block text-xl mb-1"></i>Ventarys AI</div>
+            </div>
+        </div>
+    </main>
+    <footer class="h-6 border-t border-zinc-800 flex items-center justify-center text-[10px] opacity-50">
+        © 2026 JNTX Studio
+    </footer>
+</body>
+</html>
