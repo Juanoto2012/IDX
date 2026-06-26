@@ -2,8 +2,49 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
+const http = require('http');
+const fs = require('fs');
 
 const appVersion = '1.0.0';
+
+let server = null;
+
+function startLocalServer() {
+  return new Promise((resolve) => {
+    const indexPath = path.join(__dirname, 'index.html');
+    server = http.createServer((req, res) => {
+      let filePath = '.' + (req.url === '/' ? '/index.html' : req.url);
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = {
+        '.html': 'text/html',
+        '.js': 'text/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon'
+      };
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404);
+          res.end(JSON.stringify(err));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
+        res.end(data);
+      });
+    });
+    server.listen(0, 'localhost', () => {
+      const port = server.address().port;
+      resolve(port);
+    });
+  });
+}
+
+function stopLocalServer() {
+  if (server) server.close();
+}
 
 function checkForUpdates() {
   return new Promise((resolve, reject) => {
@@ -57,7 +98,7 @@ function saveWindowState(win) {
   } catch (e) {}
 }
 
-function createWindow() {
+async function createWindow() {
   const splash = new BrowserWindow({
     width: 450,
     height: 350,
@@ -68,6 +109,7 @@ function createWindow() {
   });
   splash.loadFile('splash.html');
 
+  const port = await startLocalServer();
   const win = new BrowserWindow({
     x: windowState.x,
     y: windowState.y,
@@ -83,9 +125,9 @@ function createWindow() {
     }
   });
 
-  if (windowState.isMaximized) win.maximize();
+  win.loadURL(`http://localhost:${port}/`);
 
-  win.loadFile('index.html');
+  if (windowState.isMaximized) win.maximize();
 
   win.once('ready-to-show', () => {
     setTimeout(() => {
@@ -148,5 +190,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopLocalServer();
   if (process.platform !== 'darwin') app.quit();
 });

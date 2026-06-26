@@ -3,8 +3,6 @@ name: GitHub Pages
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'docs/**'
 
 jobs:
   deploy:
@@ -14,6 +12,11 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
+
+      - name: Copy assets
+        run: |
+          mkdir -p docs/assets
+          cp assets/logo.svg docs/assets/ 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

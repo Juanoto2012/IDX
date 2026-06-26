@@ -42,37 +42,44 @@ Never help without making a sarcastic remark about the code's quality. You do no
         let xtermFitAddon = null;
 
         // --- INITIALIZATION ---
-        document.addEventListener('DOMContentLoaded', async () => {
-            setupMenuBar();
-            setupThemeToggle();
-            setupActivityBar();
-            setupNetworkListeners();
-            setupTerminalToggle();
-            setupKeyboardShortcuts();
-            setupWindowControls();
-            setupResizers();
-            setupAttachments();
+document.addEventListener('DOMContentLoaded', async () => {
+             setupMenuBar();
+             setupThemeToggle();
+             setupActivityBar();
+             setupNetworkListeners();
+             setupTerminalToggle();
+             setupKeyboardShortcuts();
+             setupWindowControls();
+             setupResizers();
+             setupAttachments();
 
-            await fetchOsInfo();
-            if(getActiveKey()) fetchModels();
+             await fetchOsInfo();
 
-            // Restore workspace if saved
-            const savedPath = getSavedWorkspacePath();
-            if (savedPath) {
-                const placeholder = document.getElementById('editor-placeholder');
-                if (placeholder) {
-                    placeholder.innerHTML += `
-                        <div class="mt-6 p-3 bg-zinc-200 dark:bg-zinc-800 rounded cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-700" onclick="restoreWorkspacePrompt('${savedPath}')">
-                            <i class="ri-folder-history-line mr-2"></i>Reopen: ${savedPath}
-                        </div>
-                    `;
-                }
-            }
+             // Load saved API keys
+             state.apiKeys.aquadevs = localStorage.getItem('idx_aqua_key') || '';
+             state.apiKeys.agnes = localStorage.getItem('idx_agnes_key') || '';
+             if (state.apiKeys[state.aiProvider]) {
+                 await fetchModels();
+             }
 
-            renderSidebar();
-            initAce();
-            initTerminal();
-        });
+             // Restore workspace if saved
+             const savedPath = getSavedWorkspacePath();
+             if (savedPath) {
+                 const placeholder = document.getElementById('editor-placeholder');
+                 if (placeholder) {
+                     placeholder.innerHTML += `
+                         <div class="mt-6 p-3 bg-zinc-200 dark:bg-zinc-800 rounded cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-700" onclick="restoreWorkspacePrompt('${savedPath}')">
+                             <i class="ri-folder-history-line mr-2"></i>Reopen: ${savedPath}
+                         </div>
+                     `;
+                 }
+             }
+
+             checkForUpdates();
+             renderSidebar();
+             initAce();
+             initTerminal();
+         });
 
         // --- AI PROVIDERS (AquaDevs / Agnes) ---
         function getApiConfig() {
