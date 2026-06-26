@@ -1,9 +1,9 @@
 {
   "build": {
-    "beforeBuildCommand": "npm run build",
-    "beforeDevCommand": "npm run dev",
-    "devPath": "http://localhost:5173",
-    "distDir": "../dist"
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devPath": "../",
+    "distDir": "../"
   },
   "package": {
     "productName": "IDX Editor",
@@ -17,7 +17,6 @@
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
-        "icons/128x128@2x.png",
         "icons/icon.ico"
       ]
     },
@@ -26,12 +25,11 @@
         "title": "IDX Editor",
         "width": 1200,
         "height": 800,
-        "resizable": true,
-        "fullscreen": false
+        "resizable": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: https:; connect-src 'self' https://api.github.com https://api.aquadevs.com https://apihub.agnes-ai.com;"
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://js.puter.com https://api.github.com https://api.aquadevs.com https://apihub.agnes-ai.com data:; img-src 'self' data: https:; connect-src 'self' https://api.github.com https://api.aquadevs.com https://apihub.agnes-ai.com;"
     }
   }
 }

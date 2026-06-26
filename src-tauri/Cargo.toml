@@ -4,16 +4,13 @@ version = "1.0.0"
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1", features = [] }
+tauri-build = { version = "1", features = ["codegen"] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "1", features = ["api-all"] }
-reqwest = { version = "0.11", features = ["json"] }
-
-[features]
-default = ["custom-protocol"]
+tauri = { version = "1", features = ["custom-protocol"] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
 
 [profile.release]
 panic = "abort"
