@@ -8,12 +8,13 @@ const fs = require('fs');
 const appVersion = '1.0.0';
 
 let server = null;
+let baseDir = process.cwd();
 
 function startLocalServer() {
   return new Promise((resolve) => {
-    const indexPath = path.join(__dirname, 'index.html');
     server = http.createServer((req, res) => {
-      let filePath = '.' + (req.url === '/' ? '/index.html' : req.url);
+      const servePath = req.url === '/' ? '/index.html' : req.url;
+      let filePath = path.join(baseDir, servePath);
       const ext = path.extname(filePath).toLowerCase();
       const mime = {
         '.html': 'text/html',
@@ -28,7 +29,7 @@ function startLocalServer() {
       fs.readFile(filePath, (err, data) => {
         if (err) {
           res.writeHead(404);
-          res.end(JSON.stringify(err));
+          res.end(JSON.stringify({ error: 'File not found', path: filePath }));
           return;
         }
         res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
@@ -75,18 +76,8 @@ const windowState = {
   height: 800
 };
 
-try {
-  const fs = require('fs');
-  const stateFile = path.join(app.getPath('userData'), 'window-state.json');
-  if (fs.existsSync(stateFile)) {
-    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    Object.assign(windowState, saved);
-  }
-} catch (e) {}
-
 function saveWindowState(win) {
   try {
-    const fs = require('fs');
     const stateFile = path.join(app.getPath('userData'), 'window-state.json');
     fs.writeFileSync(stateFile, JSON.stringify({
       x: win.getPosition()[0],
@@ -98,14 +89,27 @@ function saveWindowState(win) {
   } catch (e) {}
 }
 
+async function loadWindowState() {
+  try {
+    const stateFile = path.join(app.getPath('userData'), 'window-state.json');
+    if (fs.existsSync(stateFile)) {
+      const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      Object.assign(windowState, saved);
+    }
+  } catch (e) {}
+}
+
 async function createWindow() {
+  baseDir = app.getAppPath();
+  await loadWindowState();
+  
   const splash = new BrowserWindow({
     width: 450,
     height: 350,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    icon: path.join(__dirname, 'assets/logo.ico')
+    icon: path.join(baseDir, 'assets/logo.ico')
   });
   splash.loadFile('splash.html');
 
@@ -117,9 +121,9 @@ async function createWindow() {
     height: windowState.height,
     frame: false,
     show: false,
-    icon: path.join(__dirname, 'assets/logo.ico'),
+    icon: path.join(baseDir, 'assets/logo.ico'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(baseDir, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
@@ -169,9 +173,9 @@ async function createWindow() {
   ipcMain.handle('get-app-version', () => appVersion);
   ipcMain.handle('get-directory-handle', (event, dirPath) => {
     try {
-      const savedDir = require('path').resolve(dirPath);
-      if (require('fs').existsSync(savedDir)) {
-        return { name: require('path').basename(savedDir), path: savedDir };
+      const savedDir = path.resolve(dirPath);
+      if (fs.existsSync(savedDir)) {
+        return { name: path.basename(savedDir), path: savedDir };
       }
     } catch (e) {}
     return null;

@@ -765,13 +765,85 @@ async function getDirHandleFromPath(pathName) {
             } catch (err) { console.error(err); }
         }
 
-        window.formatEditorCode = () => {
-            if (aceEditor) {
-                ace.require("ace/ext/beautify").beautify(aceEditor.session);
-            }
-        };
+window.formatEditorCode = () => {
+             if (aceEditor) {
+                 ace.require("ace/ext/beautify").beautify(aceEditor.session);
+             }
+         };
 
-        function setupKeyboardShortcuts() {
+         window.openVisualEditor = () => {
+             if (!state.activeFileHandle) {
+                 document.getElementById('status-os').textContent = "⚠️ Open an HTML/CSS/JS file first";
+                 return;
+             }
+             const ext = state.activeFileHandle.name.split('.').pop().toLowerCase();
+             if (!['html', 'css', 'js'].includes(ext)) {
+                 document.getElementById('status-os').textContent = "⚠️ Visual editor only for HTML/CSS/JS";
+                 return;
+             }
+             const content = aceEditor ? aceEditor.getValue() : '';
+             showVisualEditor(content, ext);
+         };
+
+         function showVisualEditor(content, type) {
+             const modal = document.createElement('div');
+             modal.id = 'visual-editor-modal';
+             modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center';
+             modal.innerHTML = `
+                 <div class="bg-zinc-100 dark:bg-zinc-900 rounded-lg w-5/6 h-5/6 flex flex-col">
+                     <div class="flex items-center justify-between p-3 border-b border-zinc-300 dark:border-zinc-800">
+                         <span class="font-bold">Visual Editor - ${type.toUpperCase()}</span>
+                         <button onclick="document.getElementById('visual-editor-modal').remove()" class="text-zinc-500 hover:text-red-500"><i class="ri-close-line"></i></button>
+                     </div>
+                     <div class="flex-1 flex">
+                         <div class="w-1/3 p-3 border-r border-zinc-300 dark:border-zinc-800 overflow-y-auto">
+                             <div class="text-xs font-bold mb-2">BLOCKS</div>
+                             <div class="flex flex-col gap-2">
+                                 ${getVisualBlocks(type).map(b => `
+                                     <div class="block-item p-2 bg-zinc-200 dark:bg-zinc-800 rounded cursor-pointer text-xs" onclick="insertVisualBlock('${b.code}')">
+                                         <i class="${b.icon} mr-1"></i>${b.name}
+                                     </div>
+                                 `).join('')}
+                             </div>
+                         </div>
+                         <div class="flex-1 p-3 relative">
+                             <iframe id="visual-preview" class="w-full h-full border border-zinc-300 dark:border-zinc-700 rounded"></iframe>
+                         </div>
+                     </div>
+                     <div class="p-3 border-t border-zinc-300 dark:border-zinc-800 flex justify-end gap-2">
+                         <button onclick="document.getElementById('visual-editor-modal').remove()" class="px-3 py-1 text-xs">Cancel</button>
+                         <button onclick="applyVisualChanges()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs">Apply</button>
+                     </div>
+                 </div>
+             `;
+             document.body.appendChild(modal);
+         }
+
+         function getVisualBlocks(type) {
+             const common = [
+                 { name: 'Div', code: '<div></div>', icon: 'ri-layout-grid-line' },
+                 { name: 'Button', code: '<button>Click me</button>', icon: 'ri-cursor-line' },
+                 { name: 'Text', code: '<p>Text here</p>', icon: 'ri-text' },
+                 { name: 'Image', code: '<img src="" alt="">', icon: 'ri-image-line' }
+             ];
+             const html = [...common, { name: 'Container', code: '<div class="container mx-auto"></div>', icon: 'ri-box-3-line' }];
+             const css = [{ name: 'Flex Center', code: '.class {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}', icon: 'ri-layout-row-line' }];
+             const js = [{ name: 'Console Log', code: 'console.log("Message");', icon: 'ri-terminal-line' }];
+             return type === 'html' ? html : type === 'css' ? css : js;
+         }
+
+         window.insertVisualBlock = (code) => {
+             if (aceEditor) {
+                 const pos = aceEditor.getCursorPosition();
+                 aceEditor.session.insert(pos, code);
+             }
+         };
+
+         window.applyVisualChanges = () => {
+             document.getElementById('visual-editor-modal')?.remove();
+         };
+
+         function setupKeyboardShortcuts() {
             window.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveCurrentFile(); }
                 if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openLocalFolder(); }
@@ -793,6 +865,12 @@ async function getDirHandleFromPath(pathName) {
                         document.getElementById('status-os').textContent = "⚠️ Open a file first";
                         setTimeout(() => fetchOsInfo(), 3000);
                     }
+                }
+
+                // Visual Editor
+                if (e.ctrlKey && e.key === 'v') {
+                    e.preventDefault();
+                    window.openVisualEditor();
                 }
             });
 
