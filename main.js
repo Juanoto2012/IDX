@@ -5,7 +5,8 @@ const pty = require('node-pty');
 const http = require('http');
 const fs = require('fs');
 
-const appVersion = '1.0.0';
+const appVersion = '1.0.1';
+const REPO_RELEASE_URL = 'https://api.github.com/repos/Juanoto2012/Ventarys-IDX/releases/latest';
 
 let server = null;
 let baseDir = '';
@@ -63,16 +64,28 @@ function stopLocalServer() {
 function checkForUpdates() {
   return new Promise((resolve, reject) => {
     const https = require('https');
-    https.get('https://api.github.com/repos/Juanoto2012/IDX/releases/latest', (res) => {
+    https.get(REPO_RELEASE_URL, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
+          const currentParts = appVersion.replace('v', '').split('.').map(Number);
+          const latestParts = (parsed.tag_name || 'v1.0.0').replace('v', '').split('.').map(Number);
+          
+          let isNewer = false;
+          for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+            const c = currentParts[i] || 0;
+            const l = latestParts[i] || 0;
+            if (l > c) { isNewer = true; break; }
+            if (l < c) break;
+          }
+          
           resolve({
             version: parsed.tag_name,
             url: parsed.html_url,
-            isUpdate: parsed.tag_name !== appVersion
+            downloadUrl: parsed.assets?.find(a => a.name.endsWith('.exe'))?.browser_download_url || null,
+            isUpdate: isNewer
           });
         } catch (e) {
           reject(e);
@@ -156,17 +169,65 @@ function createWindow() {
 
     const shell = os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || 'bash';
     
-    const ptyProcess = pty.spawn(shell, [], {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 30,
-      cwd: process.env.HOME || process.env.USERPROFILE,
-      env: { ...process.env, LANG: 'es_ES.UTF-8' }
-    });
+    // Track the current pty process so we can kill and respawn it
+    let currentPtyProcess = null;
 
-    ipcMain.on('terminal-input', (event, data) => ptyProcess.write(data));
+    function createPty(cwd) {
+      if (currentPtyProcess) {
+        try { currentPtyProcess.kill(); } catch(e) {}
+      }
+      currentPtyProcess = pty.spawn(shell, [], {
+        name: 'xterm-256color',
+        cols: 80,
+        rows: 30,
+        cwd: cwd || (process.env.HOME || process.env.USERPROFILE || process.env.HOMEPATH),
+        env: { ...process.env, LANG: 'es_ES.UTF-8' }
+      });
+      return currentPtyProcess;
+    }
+
+    let ptyProcess = createPty();
+
+    ipcMain.on('terminal-input', (event, data) => {
+      if (currentPtyProcess) currentPtyProcess.write(data);
+    });
+    ipcMain.on('terminal-spawn', (event, cwd, silent = false) => {
+      if (!cwd || typeof cwd !== 'string') {
+        cwd = os.homedir();
+      }
+      cwd = cwd.replace(/\//g, '\\');
+      if (!require('fs').existsSync(cwd)) {
+        cwd = os.homedir();
+      }
+      if (currentPtyProcess) {
+        try { currentPtyProcess.kill(); } catch(e) {}
+      }
+      try {
+        currentPtyProcess = pty.spawn(shell, [], {
+          name: 'xterm-256color',
+          cols: 80,
+          rows: 30,
+          cwd: cwd,
+          env: { ...process.env, LANG: 'es_ES.UTF-8' }
+        });
+        currentPtyProcess.onData((data) => win.webContents.send('terminal-output', data));
+      } catch (e) {
+        currentPtyProcess = pty.spawn(shell, [], {
+          name: 'xterm-256color',
+          cols: 80,
+          rows: 30,
+          cwd: os.homedir(),
+          env: { ...process.env, LANG: 'es_ES.UTF-8' }
+        });
+        currentPtyProcess.onData((data) => win.webContents.send('terminal-output', data));
+      }
+    });
+    ipcMain.on('terminal-resize', (event, size) => {
+      if (currentPtyProcess) currentPtyProcess.resize(size.cols, size.rows);
+    });
+    
+    // Initial pty data handler
     ptyProcess.onData((data) => win.webContents.send('terminal-output', data));
-    ipcMain.on('terminal-resize', (event, size) => ptyProcess.resize(size.cols, size.rows));
 
     ipcMain.handle('get-os-info', () => ({
       platform: os.platform(),
@@ -175,11 +236,77 @@ function createWindow() {
       shell: shell
     }));
 
+    ipcMain.handle('show-notification', (event, title, body) => {
+      if (!Notification.isSupported()) return;
+      const notification = new Notification({ title, body, silent: false });
+      notification.on('click', () => {
+        if (win.isMinimized()) win.restore();
+        win.focus();
+      });
+      notification.show();
+    });
+
     ipcMain.handle('check-updates', async () => {
       try {
         return await checkForUpdates();
       } catch (e) {
         return { error: e.message, isUpdate: false };
+      }
+    });
+    
+    // Handle portable update installation
+    ipcMain.handle('apply-update', async (event, { downloadUrl, version }) => {
+      const { dialog } = require('electron');
+      const os = require('os');
+      const fs = require('fs');
+      const path = require('path');
+      const https = require('https');
+      
+      try {
+        const tempExePath = path.join(os.tmpdir(), `Ventarys_Update_${version}.exe`);
+        const currentExePath = process.execPath;
+        const currentDir = path.dirname(currentExePath);
+        
+        // Download the update
+        await new Promise((resolve, reject) => {
+          https.get(downloadUrl, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+              https.get(res.headers.location, res2 => {
+                res2.pipe(fs.createWriteStream(tempExePath)).on('finish', resolve);
+              }).on('error', reject);
+            } else {
+              res.pipe(fs.createWriteStream(tempExePath)).on('finish', resolve);
+            }
+          }).on('error', reject);
+        });
+        
+        // Create batch script for update
+        const batPath = path.join(os.tmpdir(), `update_ventarys_${Date.now()}.bat`);
+        const batContent = `@echo off
+chcp 65001 > nul
+setlocal EnableDelayedExpansion
+echo Waiting for Ventarys to close...
+timeout /t 3 /nobreak > nul
+copy /Y "${tempExePath}" "${currentExePath}" > nul
+del "${tempExePath}" > nul
+start "" "${currentExePath}"
+del "%~f0"
+`.trim();
+        
+        fs.writeFileSync(batPath, batContent, 'utf8');
+        
+        // Launch batch script detached
+        require('child_process').spawn('cmd.exe', ['/c', batPath], {
+          detached: true,
+          stdio: 'ignore'
+        }).unref();
+        
+        // Quit the app
+        setTimeout(() => app.quit(), 1000);
+        
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: e.message };
       }
     });
     ipcMain.handle('get-app-version', () => appVersion);
@@ -192,10 +319,107 @@ function createWindow() {
       } catch (e) {}
       return null;
     });
+    
+    ipcMain.handle('open-folder-dialog', async () => {
+      const { dialog } = require('electron');
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory']
+      });
+      if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+      }
+      return null;
+    });
+    
+    ipcMain.handle('list-directory', (event, dirPath) => {
+      try {
+        const resolved = path.resolve(dirPath);
+        if (!fs.existsSync(resolved)) return { error: 'Directory not found' };
+        const entries = fs.readdirSync(resolved, { withFileTypes: true });
+        return entries.map(e => ({
+          name: e.name,
+          isFile: e.isFile(),
+          isDirectory: e.isDirectory()
+        }));
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+    
+    ipcMain.handle('read-file', (event, filePath) => {
+      try {
+        const resolved = path.resolve(filePath);
+        if (!fs.existsSync(resolved)) return { error: 'File not found' };
+        return { content: fs.readFileSync(resolved, 'utf8') };
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+    
+    ipcMain.handle('write-file', (event, filePath, content) => {
+      try {
+        const resolved = path.resolve(filePath);
+        fs.writeFileSync(resolved, content, 'utf8');
+        return { success: true };
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+
+    ipcMain.handle('path-join', (event, ...segments) => {
+      return path.join(...segments);
+    });
+
+    ipcMain.handle('path-basename', (event, filePath) => {
+      return path.basename(filePath);
+    });
+
+    ipcMain.handle('check-git-branch', (event, dirPath) => {
+      try {
+        const resolved = path.resolve(dirPath);
+        const gitDirPath = path.join(resolved, '.git');
+        if (!fs.existsSync(gitDirPath)) {
+          return { isGitRepo: false, branch: null };
+        }
+        const headPath = path.join(gitDirPath, 'HEAD');
+        if (fs.existsSync(headPath)) {
+          const headText = fs.readFileSync(headPath, 'utf8');
+          const branchMatch = headText.match(/refs\/heads\/(.*)/);
+          const branch = branchMatch ? branchMatch[1].trim() : 'detached';
+          return { isGitRepo: true, branch };
+        }
+        return { isGitRepo: false, branch: null };
+      } catch (e) {
+        return { isGitRepo: false, branch: null };
+      }
+    });
+
+    ipcMain.handle('get-git-branch', (event, dirPath) => {
+      try {
+        const resolved = path.resolve(dirPath);
+        const gitDirPath = path.join(resolved, '.git');
+        if (!fs.existsSync(gitDirPath)) {
+          return { isGitRepo: false, branch: null };
+        }
+        const headPath = path.join(gitDirPath, 'HEAD');
+        if (fs.existsSync(headPath)) {
+          const headText = fs.readFileSync(headPath, 'utf8');
+          const branchMatch = headText.match(/refs\/heads\/(.*)/);
+          const branch = branchMatch ? branchMatch[1].trim() : 'detached';
+          return { isGitRepo: true, branch };
+        }
+        return { isGitRepo: false, branch: null };
+      } catch (e) {
+        return { isGitRepo: false, branch: null };
+      }
+    });
 
     ipcMain.on('window-minimize', () => win.minimize());
     ipcMain.on('window-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize());
     ipcMain.on('window-close', () => win.close());
+    ipcMain.on('quit-app', () => {
+      setTimeout(() => app.quit(), 500);
+    });
   });
 }
 

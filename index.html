@@ -36,13 +36,25 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ace.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-language_tools.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.6/ext-beautify.min.js"></script>
+    <!-- Monaco Editor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 
     <script src="https://js.puter.com/v2/"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
 <link rel="stylesheet" href="src/app.css" />
+
+<!-- Context Menu -->
+<div id="context-menu" class="context-menu hidden">
+    <div class="context-menu-option" onclick="contextMenuAction('cut')"><i class="ri-scissors-cut-line"></i> Cut</div>
+    <div class="context-menu-option" onclick="contextMenuAction('copy')"><i class="ri-file-copy-line"></i> Copy</div>
+    <div class="context-menu-option" onclick="contextMenuAction('paste')"><i class="ri-file-download-line"></i> Paste</div>
+    <hr class="context-menu-divider">
+    <div class="context-menu-option" onclick="contextMenuAction('selectAll')"><i class="ri-checkbox-multiple-line"></i> Select All</div>
+    <hr class="context-menu-divider">
+    <div class="context-menu-option" onclick="contextMenuAction('formatCode')"><i class="ri-code-line"></i> Format Code</div>
+    <div class="context-menu-option" onclick="contextMenuAction('inlineAI')"><i class="ri-sparkling-fill"></i> Ask Ventarys AI</div>
+</div>
 </head>
 <body class="bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 flex flex-col h-screen transition-colors duration-200 font-sans">
 
@@ -99,8 +111,8 @@
                     <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
                         <div class="menu-option" onclick="formatEditorCode()"><span>Format Code</span><span class="opacity-50">Shift+Alt+F</span></div>
                         <hr class="border-zinc-300 dark:border-zinc-700 my-1">
-                        <div class="menu-option" onclick="if(aceEditor) aceEditor.undo()"><span>Undo</span><span class="opacity-50">Ctrl+Z</span></div>
-                        <div class="menu-option" onclick="if(aceEditor) aceEditor.redo()"><span>Redo</span><span class="opacity-50">Ctrl+Y</span></div>
+                        <div class="menu-option" onclick="if(monacoEditor) monacoEditor.trigger('keyboard','editor.undo')"><span>Undo</span><span class="opacity-50">Ctrl+Z</span></div>
+                        <div class="menu-option" onclick="if(monacoEditor) monacoEditor.trigger('keyboard','editor.redo')"><span>Redo</span><span class="opacity-50">Ctrl+Y</span></div>
                     </div>
                 </div>
 
@@ -121,8 +133,6 @@
                     <div class="menu-dropdown bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700">
                         <div class="menu-option" id="menu-toggle-theme"><span>Toggle Theme</span></div>
                         <div class="menu-option" onclick="document.getElementById('btn-toggle-term').click()"><span>Terminal</span><span class="opacity-50">Ctrl+J</span></div>
-                        <hr class="border-zinc-300 dark:border-zinc-700 my-1">
-                        <div class="menu-option" onclick="openVisualEditor()"><span><i class="ri-eyedropper-line mr-2"></i>Visual Editor</span><span class="opacity-50">Ctrl+V</span></div>
                     </div>
                 </div>
             </div>
@@ -168,7 +178,7 @@
                         <span><kbd class="border border-zinc-500 px-1 rounded">Shift</kbd> + <kbd class="border border-zinc-500 px-1 rounded">Alt</kbd> + <kbd class="border border-zinc-500 px-1 rounded">F</kbd> Format Code</span>
                     </div>
                 </div>
-                <div id="ace-container" class="absolute inset-0 hidden outline-none text-base"></div>
+                <div id="monaco-container" class="absolute inset-0 hidden"></div>
                 
                 <div id="inline-ai-box" class="hidden absolute top-10 left-1/2 transform -translate-x-1/2 w-3/4 max-w-2xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-2xl p-2 z-50 flex items-center gap-2 font-sans">
                     <i class="ri-sparkling-fill text-purple-500"></i>
@@ -180,10 +190,12 @@
             <div id="terminal-area" class="hidden h-64 flex flex-col bg-zinc-50 dark:bg-[#09090b] relative flex-shrink-0">
                 <div id="resizer-terminal" class="resizer-h absolute top-[-2px] left-0 right-0"></div>
                 <div class="flex justify-between items-center px-3 py-1 text-xs opacity-70 border-b border-t border-zinc-300 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 font-sans font-bold tracking-wider">
-                    <div class="flex gap-4" id="bottom-tabs">
-                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab" data-target="problems-container">PROBLEMS</span>
-                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab" data-target="output-container">OUTPUT</span>
-                        <span class="cursor-pointer border-b-2 border-zinc-800 dark:border-zinc-300 text-zinc-900 dark:text-zinc-100 bottom-tab active" data-target="terminal-container">TERMINAL</span>
+                    <div class="flex gap-1 items-center" id="bottom-tabs">
+                        <div class="flex gap-1 items-center border-r border-zinc-300 dark:border-zinc-700 pr-3" id="terminal-tabs-container">
+                            <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab active text-zinc-900 dark:text-zinc-100 font-bold border-b-2 border-zinc-800 dark:border-zinc-300 pb-1" data-target="terminal-container">Terminal</span>
+                        </div>
+                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab pb-1" data-target="problems-container">Problems</span>
+                        <span class="cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100 bottom-tab pb-1" data-target="output-container">Output</span>
                     </div>
                     <div class="flex gap-2 text-sm">
                         <i id="btn-clear-term" class="ri-delete-bin-line cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" title="Clear"></i>
@@ -236,6 +248,7 @@
     </div>
 
     <input type="file" id="ai-attachment-input" class="hidden" multiple>
+    <div id="toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
 
     <script src="src/app.js"></script>
 </body>

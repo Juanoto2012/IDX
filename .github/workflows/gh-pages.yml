@@ -3,6 +3,12 @@ name: GitHub Pages
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   deploy:
@@ -13,10 +19,14 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: Copy assets
+      - name: Copy project files
         run: |
           mkdir -p docs/assets
-          cp assets/logo.svg docs/assets/ 2>/dev/null || true
+          cp index.html docs/
+          cp -r src/ docs/
+          cp -r assets/ docs/assets/
+          cp splash.html docs/ 2>/dev/null || true
+          cp docs/index.html docs/landing.html 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

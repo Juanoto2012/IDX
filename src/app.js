@@ -10,6 +10,7 @@ Never help without making a sarcastic remark about the code's quality. You do no
             fileSystemRoot: null, 
             openFiles: [],
             activeFileHandle: null, 
+            activeFilePath: null,
             isTerminalOpen: false,
             
             // Git State
@@ -34,12 +35,49 @@ Never help without making a sarcastic remark about the code's quality. You do no
             
             osInfo: null,
             governancePrompt: localStorage.getItem('idx_governance') || '',
-            settings: JSON.parse(localStorage.getItem('idx_settings')) || { fontSize: 14, tabSize: 4 }
+            settings: JSON.parse(localStorage.getItem('idx_settings')) || { fontSize: 14, tabSize: 4 },
+            
+            // Custom Providers
+            customProviders: JSON.parse(localStorage.getItem('ventarys_customProviders') || '[]'),
+            editingProviderIndex: -1,
+            
+            // Output Panel
+            outputLines: [],
+            outputPanelVisible: false,
+            
+            // Auto Reload
+            autoReloadEnabled: localStorage.getItem('ventarys_autoReload') !== 'false',
+            fileSnapshotMap: new Map(),
+            
+            // Context Menu
+            contextTarget: null
         };
 
-        let aceEditor = null;
-        let xtermInstance = null;
-        let xtermFitAddon = null;
+         let monacoEditor = null;
+         let monacoModel = null;
+         let xtermInstance = null;
+         let xtermFitAddon = null;
+
+          function showToast(message, type = 'info') {
+              const container = document.getElementById('toast-container');
+              if (!container) return;
+              const icons = { info: 'ri-information-line', success: 'ri-checkbox-circle-line', warning: 'ri-error-warning-line', error: 'ri-close-circle-line' };
+              const toast = document.createElement('div');
+              toast.className = `toast ${type}`;
+              toast.innerHTML = `<i class="${icons[type] || icons.info}"></i><span>${message}</span>`;
+              container.appendChild(toast);
+              setTimeout(() => {
+                  toast.classList.add('hiding');
+                  setTimeout(() => toast.remove(), 200);
+              }, 3000);
+          }
+
+          function notify(title, body) {
+              if (window.electronAPI && window.electronAPI.showNotification) {
+                  window.electronAPI.showNotification(title, body).catch(() => {});
+              }
+              showToast(body || title, 'info');
+          }
 
         // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -75,10 +113,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                  }
              }
 
-             checkForUpdates();
-             renderSidebar();
-             initAce();
-             initTerminal();
+              checkForUpdates();
+              renderSidebar();
+              initMonaco();
+              initTerminal();
+              setupContextMenu();
+              addOutputLine('[IDX System] Monaco Editor (Twilight/Clouds) loaded', 'system');
+              addOutputLine('[IDX System] Custom providers: ' + state.customProviders.length, 'system');
          });
 
         // --- AI PROVIDERS (AquaDevs / Agnes) ---
@@ -206,6 +247,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         };
 
+        // Set terminal working directory (Electron only)
+        window.setTerminalCwd = (cwdPath) => {
+            if (!window.electronAPI || !cwdPath) return;
+            // Send SIGINT to kill any running process in the pty
+            try {
+                window.electronAPI.terminalInput('\x03');
+            } catch(e) {}
+            // Spawn a new pty with the correct cwd
+            window.electronAPI.spawnTerminal(cwdPath);
+        };
+
+        // Full terminal reset with exact path (drive -> folder -> subfolder)
+        window.resetTerminalWithPath = (cwdPath) => {
+            if (!window.electronAPI || !cwdPath) return;
+            try { window.electronAPI.terminalInput('\x03'); } catch(e) {}
+            window.electronAPI.spawnTerminalSilent(cwdPath);
+        };
+
         window.promptGitCommit = () => {
             const msg = prompt("Enter commit message:");
             if (msg) {
@@ -237,7 +296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     state.isDarkMode = !state.isDarkMode;
                     document.documentElement.classList.toggle('dark', state.isDarkMode);
                     
-                    if (aceEditor) aceEditor.setTheme(state.isDarkMode ? 'ace/theme/tomorrow_night' : 'ace/theme/tomorrow');
+                    if (monacoEditor) monacoEditor.updateOptions({ theme: state.isDarkMode ? 'vs-dark' : 'vs' });
                     if (xtermInstance) xtermInstance.options.theme = getTerminalTheme();
                     renderSidebar(); 
                 });
@@ -537,59 +596,101 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
 
         // --- LOCAL FILES & GIT HANDLING ---
-async function openLocalFolder(persistPath = null) {
+        async function openLocalFolder(persistPath = null) {
+            console.log('[openLocalFolder] called, persistPath:', persistPath);
+            console.log('[openLocalFolder] electronAPI exists:', !!window.electronAPI);
+            
             try {
-                const dirHandle = persistPath ? await getDirHandleFromPath(persistPath) : await window.showDirectoryPicker({ mode: 'readwrite' });
-                if (!dirHandle) return;
-                state.fileSystemRoot = { name: dirHandle.name, type: 'folder', handle: dirHandle, children: [], isExpanded: true };
-                await loadDirectoryContents(dirHandle, state.fileSystemRoot.children);
-                await checkGitStatus(dirHandle);
-                renderSidebar();
-                saveWorkspacePath(dirHandle.path || dirHandle.name);
-
-                let absolutePath = null;
-                try {
-                    async function findFirstFileWithPath(handle, currentRelativePath = "") {
-                        for await (const entry of handle.values()) {
-                            if (entry.kind === 'file') {
-                                const file = await entry.getFile();
-                                if (file.path) return { file, relative: currentRelativePath + entry.name };
-                            }
-                            if (entry.kind === 'directory') {
-                                const result = await findFirstFileWithPath(entry, currentRelativePath + entry.name + '/');
-                                if (result) return result;
-                            }
-                        }
-                        return null;
+                let dirPath = null;
+                let dirName = null;
+                
+                if (window.electronAPI) {
+                    console.log('[openLocalFolder] Opening folder dialog...');
+                    dirPath = await window.electronAPI.openFolderDialog();
+                    console.log('[openLocalFolder] Dialog result:', dirPath);
+                    
+                    if (!dirPath) {
+                        console.log('[openLocalFolder] User canceled or no path returned');
+                        return;
                     }
-
-                    const result = await findFirstFileWithPath(dirHandle);
-                    if (result && result.file && result.file.path) {
-                        let normalizedAbsolutePath = result.file.path.replace(/\\/g, '/');
-                        let relativePath = result.relative;
-                        let rootPathLength = normalizedAbsolutePath.length - relativePath.length - 1;
-                        absolutePath = result.file.path.substring(0, rootPathLength);
-                    }
-                } catch (e) { console.warn("Auto CD Path Resolution Error:", e); }
-
-                if (absolutePath) {
-                    if (window.electronAPI) window.electronAPI.terminalInput('\x15\x03');
-                    setTimeout(() => {
-                        injectTerminalCommand(`cd "${absolutePath}"`);
-                    }, 100);
-                } else if (persistPath) {
-                    injectTerminalCommand(`cd "${persistPath}"`);
+                    
+                    dirName = await window.electronAPI.pathBasename(dirPath);
+                    console.log('[openLocalFolder] Resolved path:', dirPath, 'name:', dirName);
                 } else {
-                    setTimeout(() => {
-                        injectTerminalCommand(`cd "${dirHandle.name}"`);
-                        if (!window.electronAPI && xtermInstance) {
-                            xtermInstance.writeln(`\x1b[36m[IDX] Web Mode Simulation: Changed context to /${dirHandle.name}\x1b[0m`);
-                        }
-                    }, 100);
+                    const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                    dirName = dirHandle.name;
+                    dirPath = dirHandle.name;
                 }
-            } catch (err) {}
-        }
+                
+                // Clear old state
+                openFiles = [];
+                activeFilePath = null;
+                state.activeFileHandle = null;
+                
+                state.fileSystemRoot = { name: dirName, path: dirPath, handle: dirPath, children: [], isExpanded: true };
+                
+                console.log('[openLocalFolder] Loading directory contents...');
+                
+                // Load directory contents using IPC in Electron
+                if (window.electronAPI && window.electronAPI.listDirectory) {
+                    const result = await window.electronAPI.listDirectory(dirPath);
+                    console.log('[openLocalFolder] listDirectory result:', result);
+                    
+                    if (result.error) {
+                        console.error('[openLocalFolder] List directory error:', result.error);
+                        alert('Error listing directory: ' + result.error);
+                        return;
+                    }
+                    
+                    if (!result || !Array.isArray(result)) {
+                        console.error('[openLocalFolder] Unexpected result format:', result);
+                        alert('Unexpected result from directory listing');
+                        return;
+                    }
+                    
+                    console.log('[openLocalFolder] Found', result.length, 'entries');
+                    
+                    result.forEach(entry => {
+                        state.fileSystemRoot.children.push({
+                            name: entry.name,
+                            type: entry.isFile ? 'file' : 'folder',
+                            handle: dirPath,
+                            children: entry.isFile ? null : [],
+                            isExpanded: false
+                        });
+                    });
+                    state.fileSystemRoot.children.sort((a, b) => {
+                        if (a.type === b.type) return a.name.localeCompare(b.name);
+                        return a.type === 'folder' ? -1 : 1;
+                    });
+                } else {
+                    for await (const entry of state.fileSystemRoot.handle.values()) {
+                        if (entry.kind === 'file') {
+                            state.fileSystemRoot.children.push({ name: entry.name, type: 'file', handle: entry });
+                        } else if (entry.kind === 'directory') {
+                            state.fileSystemRoot.children.push({ name: entry.name, type: 'folder', handle: entry, children: [], isExpanded: false });
+                        }
+                    }
+                }
+                
+                console.log('[openLocalFolder] Rendering sidebar with', state.fileSystemRoot.children.length, 'children');
+                renderSidebar();
+                saveWorkspacePath(dirPath);
 
+                // Set terminal cwd
+                if (window.electronAPI) {
+                    window.electronAPI.spawnTerminalSilent(dirPath);
+                } else {
+                    injectTerminalCommand(`cd "${dirPath}"`);
+                }
+
+                // Check git status
+                checkGitStatus(dirPath);
+            } catch (err) {
+                console.error("[openLocalFolder] Error:", err);
+                alert('Error opening folder: ' + err.message);
+            }
+        }
         function saveWorkspacePath(path) {
             localStorage.setItem('idx_workspace_path', path);
         }
@@ -613,18 +714,38 @@ async function getDirHandleFromPath(pathName) {
             return null;
         }
 
-        async function checkGitStatus(dirHandle) {
+        async function checkGitStatus(dirPath) {
             try {
-                const gitHandle = await dirHandle.getDirectoryHandle('.git');
-                const headHandle = await gitHandle.getFileHandle('HEAD');
-                const headFile = await headHandle.getFile();
-                const headText = await headFile.text();
-                const branchMatch = headText.match(/refs\/heads\/(.*)/);
-                const branch = branchMatch ? branchMatch[1].trim() : 'detached';
+                if (window.electronAPI && window.electronAPI.checkGitBranch) {
+                    const result = await window.electronAPI.checkGitBranch(dirPath);
+                    if (result.isGitRepo) {
+                        document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> ${result.branch}`;
+                        state.isGitRepo = true;
+                        state.gitBranch = result.branch;
+                    } else {
+                        document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> No Git`;
+                        state.isGitRepo = false;
+                        state.gitBranch = null;
+                    }
+                    return;
+                }
                 
-                document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> ${branch}`;
-                state.isGitRepo = true;
-                state.gitBranch = branch;
+                // Browser mode fallback
+                try {
+                    const gitHandle = await state.fileSystemRoot.handle.getDirectoryHandle('.git');
+                    const headHandle = await gitHandle.getFileHandle('HEAD');
+                    const headFile = await headHandle.getFile();
+                    const headText = await headFile.text();
+                    const branchMatch = headText.match(/refs\/heads\/(.*)/);
+                    const branch = branchMatch ? branchMatch[1].trim() : 'detached';
+                    document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> ${branch}`;
+                    state.isGitRepo = true;
+                    state.gitBranch = branch;
+                } catch(e) {
+                    document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> No Git`;
+                    state.isGitRepo = false;
+                    state.gitBranch = null;
+                }
             } catch (e) {
                 document.getElementById('status-git-branch').innerHTML = `<i class="ri-git-branch-line"></i> No Git`;
                 state.isGitRepo = false;
@@ -633,6 +754,28 @@ async function getDirHandleFromPath(pathName) {
         }
 
         async function loadDirectoryContents(dirHandle, childrenArray) {
+            // Electron mode: dirHandle is a string path
+            if (typeof dirHandle === 'string' && window.electronAPI && window.electronAPI.listDirectory) {
+                const result = await window.electronAPI.listDirectory(dirHandle);
+                if (!result.error) {
+                    result.forEach(entry => {
+                        childrenArray.push({
+                            name: entry.name,
+                            type: entry.isFile ? 'file' : 'folder',
+                            handle: dirHandle,
+                            children: entry.isFile ? null : [],
+                            isExpanded: false
+                        });
+                    });
+                    childrenArray.sort((a, b) => {
+                        if (a.type === b.type) return a.name.localeCompare(b.name);
+                        return a.type === 'folder' ? -1 : 1;
+                    });
+                }
+                return;
+            }
+            
+            // Browser mode: use FileSystemDirectoryHandle
             for await (const entry of dirHandle.values()) {
                 if (entry.kind === 'file') {
                     childrenArray.push({ name: entry.name, type: 'file', handle: entry });
@@ -674,7 +817,12 @@ async function getDirHandleFromPath(pathName) {
             const renderTree = (nodes, parentEl, depth = 0) => {
                 nodes.forEach(node => {
                     const div = document.createElement('div');
-                    const isActive = state.activeFileHandle === node.handle;
+                    let isActive = false;
+                    if (window.electronAPI && typeof node.handle === 'string') {
+                        isActive = activeFilePath === node.handle;
+                    } else {
+                        isActive = state.activeFileHandle === node.handle;
+                    }
                     const bgClass = isActive ? (state.isDarkMode ? 'bg-zinc-800' : 'bg-zinc-200') : '';
                     div.className = `flex items-center gap-2 py-1 px-2 cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-800 transition-colors truncate select-none font-mono text-sm ${bgClass}`;
                     div.style.paddingLeft = `${(depth * 12) + 12}px`;
@@ -684,16 +832,33 @@ async function getDirHandleFromPath(pathName) {
                         const arrowClass = node.isExpanded ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line';
                         
                         div.innerHTML = `<i class="${arrowClass} text-[10px] opacity-50"></i><i class="${iconClass}"></i><span>${node.name}</span>`;
-                        div.onclick = async () => {
+                        div.onclick = async (event) => {
+                            event.stopPropagation();
                             if (!node.isExpanded) {
-                                if (node.children && node.children.length === 0) await loadDirectoryContents(node.handle, node.children);
+                                if (node.children && node.children.length === 0) {
+                                    const result = await window.electronAPI.listDirectory(node.handle);
+                                    if (!result.error) {
+                                        node.children = result.map(entry => ({
+                                            name: entry.name,
+                                            type: entry.isFile ? 'file' : 'folder',
+                                            handle: node.handle,
+                                            children: entry.isFile ? null : [],
+                                            isExpanded: false
+                                        }));
+                                    }
+                                }
                                 node.isExpanded = true;
                             } else node.isExpanded = false;
                             renderSidebar(); 
                         };
                     } else {
                         div.innerHTML = `<i class="ri-checkbox-blank-circle-fill opacity-0 text-[4px] w-[10px]"></i><i class="${getFileIcon(node.name)} text-sm"></i><span>${node.name}</span>`;
-                        div.onclick = () => openFile(node);
+                        div.onclick = async (event) => {
+                            event.stopPropagation();
+                            const filePath = await window.electronAPI.pathJoin(node.handle, node.name);
+                            openFile({ name: node.name, handle: filePath, _fullPath: filePath });
+                            notify('File opened', `${node.name}`);
+                        };
                     }
                     
                     parentEl.appendChild(div);
@@ -711,139 +876,94 @@ async function getDirHandleFromPath(pathName) {
             renderTree(state.fileSystemRoot.children, treeContainer);
             container.appendChild(treeContainer);
         }
-
+        
         async function openFile(fileNode) {
-            if (!state.openFiles.find(f => f.name === fileNode.name)) state.openFiles.push(fileNode);
-            state.activeFileHandle = fileNode.handle;
+            let filePath = '';
+            if (fileNode._fullPath) {
+                filePath = fileNode._fullPath;
+            } else if (window.electronAPI && fileNode.handle && typeof fileNode.handle === 'string') {
+                filePath = await window.electronAPI.pathJoin(fileNode.handle, fileNode.name);
+            } else {
+                filePath = fileNode.path || fileNode.name;
+            }
             
-            const fileData = await fileNode.handle.getFile();
-            const text = await fileData.text();
-            
-            updateTabs();
-            renderSidebar();
+            let existing = openFiles.find(f => f.path === filePath);
+            if (!existing) {
+                let text = '';
+                
+                if (window.electronAPI && window.electronAPI.readFile) {
+                    const result = await window.electronAPI.readFile(filePath);
+                    if (result.error) {
+                        console.error('Read file error:', result.error);
+                        showToast(`Error opening file: ${result.error}`, 'error');
+                        return;
+                    }
+                    text = result.content;
+                } else {
+                    const fileData = await fileNode.handle.getFile();
+                    text = await fileData.text();
+                }
+                
+                existing = { path: filePath, name: fileNode.name, handle: filePath, content: text, isDirty: false, _fullPath: filePath };
+                openFiles.push(existing);
+            }
+
+            activeFilePath = filePath;
+            state.activeFileHandle = existing.handle;
             
             document.getElementById('editor-placeholder').classList.add('hidden');
-            document.getElementById('ace-container').classList.remove('hidden');
+            document.getElementById('monaco-container').classList.remove('hidden');
             
-            if (aceEditor) {
-                aceEditor.setValue(text, -1);
-                const ext = fileNode.name.split('.').pop().toLowerCase();
-                const langMap = { 'js':'javascript', 'ts':'typescript', 'html':'html', 'css':'css', 'json':'json', 'md':'markdown' };
-                const mode = langMap[ext] || 'text';
-                aceEditor.session.setMode(`ace/mode/${mode}`);
+            if (monacoEditor) {
+                monacoEditor.setValue(existing.content);
+                const ext = existing.name.split('.').pop().toLowerCase();
+                const langMap = { 'js':'javascript', 'ts':'typescript', 'html':'html', 'css':'css', 'json':'json', 'md':'markdown', 'py':'python', 'jsx':'javascript', 'tsx':'typescript', 'xml':'xml', 'yaml':'yaml', 'yml':'yaml', 'sh':'shell', 'ps1':'powershell', 'bat':'batch', 'java':'java', 'c':'c', 'cpp':'cpp', 'h':'cpp', 'rb':'ruby', 'go':'go', 'rs':'rust', 'php':'php', 'sql':'sql', 'swift':'swift', 'kt':'kotlin' };
+                monaco.editor.setModelLanguage(monacoEditor.getModel(), langMap[ext] || 'plaintext');
             }
 
-            document.getElementById('window-title-file').textContent = `- ${fileNode.name}`;
-            document.getElementById('status-encoding').classList.remove('hidden');
-            document.getElementById('status-lang').classList.remove('hidden');
-            document.getElementById('status-lang').textContent = fileNode.name.split('.').pop().toUpperCase();
-        }
-
-        function closeFile(e, fileNode) {
-            e.stopPropagation();
-            state.openFiles = state.openFiles.filter(f => f.name !== fileNode.name);
-            if (state.activeFileHandle === fileNode.handle) {
-                state.activeFileHandle = null;
-                document.getElementById('editor-placeholder').classList.remove('hidden');
-                document.getElementById('ace-container').classList.add('hidden');
-                document.getElementById('window-title-file').textContent = '';
-                document.getElementById('status-encoding').classList.add('hidden');
-                document.getElementById('status-lang').classList.add('hidden');
-                if (state.openFiles.length > 0) openFile(state.openFiles[state.openFiles.length - 1]);
-            }
-            updateTabs(); renderSidebar();
+            document.getElementById('window-title-file').textContent = `- ${existing.name}`;
+            const statusEncoding = document.getElementById('status-encoding');
+            const statusLang = document.getElementById('status-lang');
+            if (statusEncoding) statusEncoding.classList.remove('hidden');
+            if (statusLang) statusLang.classList.remove('hidden');
+            if (statusLang) statusLang.textContent = existing.name.split('.').pop().toUpperCase();
+            
+            renderTabs();
+            renderSidebar();
+            showToast(`Opened: ${existing.name}`, 'info');
         }
 
         async function saveCurrentFile() {
-            if (!state.activeFileHandle || !aceEditor) return;
+            if (!activeFilePath) return;
             try {
-                const writable = await state.activeFileHandle.createWritable();
-                await writable.write(aceEditor.getValue());
-                await writable.close();
+                const content = monacoEditor ? monacoEditor.getValue() : '';
+                
+                if (window.electronAPI && window.electronAPI.writeFile) {
+                    const result = await window.electronAPI.writeFile(activeFilePath, content);
+                    if (result.error) {
+                        console.error('Write file error:', result.error);
+                        return;
+                    }
+                } else {
+                    const writable = await state.activeFileHandle.createWritable();
+                    await writable.write(content);
+                    await writable.close();
+                }
+                
+                const f = openFiles.find(x => x.path === activeFilePath);
+                if (f) f.content = content;
                 document.getElementById('status-encoding').textContent = 'SAVED';
                 setTimeout(() => document.getElementById('status-encoding').textContent = 'UTF-8', 1500);
             } catch (err) { console.error(err); }
         }
 
 window.formatEditorCode = () => {
-             if (aceEditor) {
-                 ace.require("ace/ext/beautify").beautify(aceEditor.session);
-             }
-         };
+              if (monacoEditor) {
+                  monacoEditor.getAction('editor.action.formatDocument').run();
+              }
+          };
 
-         window.openVisualEditor = () => {
-             if (!state.activeFileHandle) {
-                 document.getElementById('status-os').textContent = "⚠️ Open an HTML/CSS/JS file first";
-                 return;
-             }
-             const ext = state.activeFileHandle.name.split('.').pop().toLowerCase();
-             if (!['html', 'css', 'js'].includes(ext)) {
-                 document.getElementById('status-os').textContent = "⚠️ Visual editor only for HTML/CSS/JS";
-                 return;
-             }
-             const content = aceEditor ? aceEditor.getValue() : '';
-             showVisualEditor(content, ext);
-         };
-
-         function showVisualEditor(content, type) {
-             const modal = document.createElement('div');
-             modal.id = 'visual-editor-modal';
-             modal.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center';
-             modal.innerHTML = `
-                 <div class="bg-zinc-100 dark:bg-zinc-900 rounded-lg w-5/6 h-5/6 flex flex-col">
-                     <div class="flex items-center justify-between p-3 border-b border-zinc-300 dark:border-zinc-800">
-                         <span class="font-bold">Visual Editor - ${type.toUpperCase()}</span>
-                         <button onclick="document.getElementById('visual-editor-modal').remove()" class="text-zinc-500 hover:text-red-500"><i class="ri-close-line"></i></button>
-                     </div>
-                     <div class="flex-1 flex">
-                         <div class="w-1/3 p-3 border-r border-zinc-300 dark:border-zinc-800 overflow-y-auto">
-                             <div class="text-xs font-bold mb-2">BLOCKS</div>
-                             <div class="flex flex-col gap-2">
-                                 ${getVisualBlocks(type).map(b => `
-                                     <div class="block-item p-2 bg-zinc-200 dark:bg-zinc-800 rounded cursor-pointer text-xs" onclick="insertVisualBlock('${b.code}')">
-                                         <i class="${b.icon} mr-1"></i>${b.name}
-                                     </div>
-                                 `).join('')}
-                             </div>
-                         </div>
-                         <div class="flex-1 p-3 relative">
-                             <iframe id="visual-preview" class="w-full h-full border border-zinc-300 dark:border-zinc-700 rounded"></iframe>
-                         </div>
-                     </div>
-                     <div class="p-3 border-t border-zinc-300 dark:border-zinc-800 flex justify-end gap-2">
-                         <button onclick="document.getElementById('visual-editor-modal').remove()" class="px-3 py-1 text-xs">Cancel</button>
-                         <button onclick="applyVisualChanges()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs">Apply</button>
-                     </div>
-                 </div>
-             `;
-             document.body.appendChild(modal);
-         }
-
-         function getVisualBlocks(type) {
-             const common = [
-                 { name: 'Div', code: '<div></div>', icon: 'ri-layout-grid-line' },
-                 { name: 'Button', code: '<button>Click me</button>', icon: 'ri-cursor-line' },
-                 { name: 'Text', code: '<p>Text here</p>', icon: 'ri-text' },
-                 { name: 'Image', code: '<img src="" alt="">', icon: 'ri-image-line' }
-             ];
-             const html = [...common, { name: 'Container', code: '<div class="container mx-auto"></div>', icon: 'ri-box-3-line' }];
-             const css = [{ name: 'Flex Center', code: '.class {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}', icon: 'ri-layout-row-line' }];
-             const js = [{ name: 'Console Log', code: 'console.log("Message");', icon: 'ri-terminal-line' }];
-             return type === 'html' ? html : type === 'css' ? css : js;
-         }
-
-         window.insertVisualBlock = (code) => {
-             if (aceEditor) {
-                 const pos = aceEditor.getCursorPosition();
-                 aceEditor.session.insert(pos, code);
-             }
-         };
-
-         window.applyVisualChanges = () => {
-             document.getElementById('visual-editor-modal')?.remove();
-         };
-
-         function setupKeyboardShortcuts() {
+          function setupKeyboardShortcuts() {
             window.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveCurrentFile(); }
                 if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openLocalFolder(); }
@@ -866,12 +986,6 @@ window.formatEditorCode = () => {
                         setTimeout(() => fetchOsInfo(), 3000);
                     }
                 }
-
-                // Visual Editor
-                if (e.ctrlKey && e.key === 'v') {
-                    e.preventDefault();
-                    window.openVisualEditor();
-                }
             });
 
             document.getElementById('inline-ai-close').addEventListener('click', () => {
@@ -887,7 +1001,7 @@ window.formatEditorCode = () => {
                     e.target.value = `Generating code with ${state.aiProvider}...`;
                     
                     try {
-                        const context = aceEditor ? aceEditor.getValue() : "";
+                        const context = monacoEditor ? monacoEditor.getValue() : "";
                         const systemPrompt = `You are Ventarys. Modify the code as requested. Reply ONLY with the resulting code, without markdown formatting or backticks (\`\`\`), do not provide explanations.\n\nCURRENT CODE:\n${context}`;
                         const payload = { model: state.selectedModel, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }] };
                         
@@ -897,14 +1011,14 @@ window.formatEditorCode = () => {
                         let data = await response.json();
                         let result = data.choices[0].message.content.replace(/^```[a-z]*\n/gm, '').replace(/```$/gm, '');
                         
-                        if (aceEditor) aceEditor.setValue(result, -1);
+                        if (monacoEditor) monacoEditor.setValue(result);
                     } catch (err) {
                         console.error(err);
                     } finally {
                         e.target.disabled = false;
                         e.target.value = "";
                         document.getElementById('inline-ai-box').classList.add('hidden');
-                        if (aceEditor) aceEditor.focus();
+                        if (monacoEditor) monacoEditor.focus();
                     }
                 }
             });
@@ -913,51 +1027,185 @@ window.formatEditorCode = () => {
         function updateTabs() {
             const container = document.getElementById('editor-tabs');
             container.innerHTML = '';
-            state.openFiles.forEach(file => {
-                const isActive = state.activeFileHandle === file.handle;
-                const tab = document.createElement('div');
+            openFiles.forEach(file => {
+                const isActive = file.path === activeFilePath;
                 const bgClass = isActive ? (state.isDarkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-white text-zinc-900 border-b-2 border-b-blue-500') : 'opacity-60 hover:opacity-100 hover:bg-zinc-200 dark:hover:bg-zinc-800';
                 
+                const tab = document.createElement('div');
                 tab.className = `flex items-center gap-2 px-3 py-2 min-w-max cursor-pointer border-r border-zinc-300 dark:border-zinc-800 transition-colors group ${bgClass} font-mono text-sm`;
-                tab.onclick = () => openFile(file);
-                tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}</span><i class="ri-close-line ml-2 opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" style="opacity: ${isActive ? '1' : ''}" onclick="arguments[0].stopPropagation(); window.closeFileProxy(event, '${file.name}')"></i>`;
+                tab.onclick = () => {
+                    activeFilePath = file.path;
+                    state.activeFileHandle = file.handle;
+                    if (monacoEditor) {
+                        monacoEditor.setValue(file.content);
+                        const ext = file.name.split('.').pop().toLowerCase();
+                        const langMap = { 'js':'javascript', 'ts':'typescript', 'html':'html', 'css':'css', 'json':'json', 'md':'markdown', 'py':'python', 'jsx':'javascript', 'tsx':'typescript', 'xml':'xml', 'yaml':'yaml', 'yml':'yaml', 'sh':'shell', 'ps1':'powershell', 'bat':'batch', 'java':'java', 'c':'c', 'cpp':'cpp', 'h':'cpp', 'rb':'ruby', 'go':'go', 'rs':'rust', 'php':'php', 'sql':'sql', 'swift':'swift', 'kt':'kotlin' };
+                        monaco.editor.setModelLanguage(monacoEditor.getModel(), langMap[ext] || 'plaintext');
+                    }
+                    document.getElementById('window-title-file').textContent = `- ${file.name}`;
+                    renderTabs();
+                };
+                tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}</span><i class="ri-close-line ml-2 opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" style="opacity: ${isActive ? '1' : ''}" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.name.replace(/'/g, "\\'")}')"></i>`;
                 container.appendChild(tab);
             });
         }
-        window.closeFileProxy = (e, filename) => { const fileNode = state.openFiles.find(f => f.name === filename); if (fileNode) closeFile(e, fileNode); };
+        window.closeFileProxy = (e, filename) => {
+            const idx = openFiles.findIndex(f => f.name === filename);
+            if (idx > -1) {
+                openFiles.splice(idx, 1);
+                if (activeFilePath === openFiles[idx]?.path) {
+                    activeFilePath = openFiles.length > 0 ? openFiles[Math.max(0, idx - 1)].path : null;
+                    if (activeFilePath) openFile(openFiles.find(f => f.path === activeFilePath));
+                    else {
+                        document.getElementById('editor-placeholder').classList.remove('hidden');
+                        document.getElementById('monaco-container').classList.add('hidden');
+                        document.getElementById('window-title-file').textContent = '';
+                        document.getElementById('status-encoding').classList.add('hidden');
+                        document.getElementById('status-lang').classList.add('hidden');
+                    }
+                }
+                renderTabs();
+                renderSidebar();
+            }
+        };
 
-        // --- ACE EDITOR & PROBLEMS ---
-        function initAce() {
-            ace.require("ace/ext/language_tools");
-            aceEditor = ace.edit("ace-container");
-            aceEditor.setTheme(state.isDarkMode ? "ace/theme/tomorrow_night" : "ace/theme/tomorrow");
-            aceEditor.session.setMode("ace/mode/javascript");
-            
-            // Killer Features added
-            aceEditor.setOptions({
-                fontSize: state.settings.fontSize + "px", 
-                tabSize: state.settings.tabSize, 
-                fontFamily: "monospace", 
-                showPrintMargin: false, 
-                useWorker: true, // Enables syntax checking
-                enableBasicAutocompletion: true, 
-                enableSnippets: true, 
-                enableLiveAutocompletion: true,
-                wrap: true, // Auto Word wrap
-                displayIndentGuides: true, // Structural layout guides
-                enableMultiselect: true, // Multiple cursors
-                showFoldWidgets: true // Syntax folding
-            });
+        // --- MONACO EDITOR ---
+        let currentMonacoTheme = 'vs-dark'; // 'vs' for clouds (light), 'vs-dark' for twilight (dark)
+        const monacoThemes = {
+            'vs-dark': { theme: 'vs-dark', label: 'Twilight (Dark)' },
+            'vs': { theme: 'vs', label: 'Clouds (Light)' }
+        };
 
-            // Listener for Syntax Annotations (Problems/Warnings)
-            aceEditor.session.on("changeAnnotation", () => {
-                updateProblemsTab();
+        function initMonaco() {
+            require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+            require(['vs/editor/editor.main'], function () {
+                // Register Twilight theme (dark)
+                monaco.editor.defineTheme('twilight', {
+                    base: 'vs-dark',
+                    inherit: true,
+                    rules: [
+                        { token: 'comment', foreground: '75715E' },
+                        { token: 'keyword', foreground: 'AE81FF' },
+                        { token: 'string', foreground: 'BC8C8C' },
+                        { token: 'number', foreground: 'AE81FF' },
+                        { token: 'type', foreground: '66D9EF' },
+                        { token: 'variable', foreground: 'F8F8F0' },
+                        { token: 'constant', foreground: 'AE81FF' },
+                        { token: 'function', foreground: 'A6E22E' },
+                        { token: 'type.identifier', foreground: '66D9EF' },
+                    ],
+                    colors: {
+                        'editor.background': '#141414',
+                        'editor.foreground': '#F8F8F2',
+                        'editor.lineHighlightBackground': '#3A3A3A',
+                        'editorCursor.foreground': '#F8F8F0',
+                        'editor.selectionBackground': '#FFFFFF40',
+                        'editor.inactiveSelectionBackground': '#FFFFFF20',
+                    }
+                });
+
+                // Register Clouds theme (light)
+                monaco.editor.defineTheme('clouds', {
+                    base: 'vs',
+                    inherit: true,
+                    rules: [
+                        { token: 'comment', foreground: '808080' },
+                        { token: 'keyword', foreground: '0000FF' },
+                        { token: 'string', foreground: 'A50B0B' },
+                        { token: 'number', foreground: '009B00' },
+                        { token: 'type', foreground: '007000' },
+                        { token: 'variable', foreground: '000000' },
+                        { token: 'constant', foreground: '0000FF' },
+                        { token: 'function', foreground: '0B00A0' },
+                    ],
+                    colors: {
+                        'editor.background': '#FFFFFF',
+                        'editor.foreground': '#000000',
+                        'editor.lineHighlightBackground': '#EEEEEE',
+                        'editorCursor.foreground': '#000000',
+                        'editor.selectionBackground': '#ADD6FF',
+                    }
+                });
+
+                // Set initial theme based on dark mode
+                updateMonacoTheme();
+
+                monacoEditor = monaco.editor.create(document.getElementById('monaco-container'), {
+                    value: '',
+                    language: 'javascript',
+                    theme: currentMonacoTheme === 'vs-dark' ? 'twilight' : 'clouds',
+                    fontSize: state.settings.fontSize,
+                    fontFamily: 'Consolas, "Courier New", monospace',
+                    tabSize: state.settings.tabSize,
+                    minimap: { enabled: true },
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    wordWrap: 'on',
+                    bracketPairColorization: { enabled: true },
+                    smoothScrolling: true,
+                    cursorSmoothScrolling: true,
+                    padding: { top: 16, bottom: 16 },
+                    renderWhitespace: 'selection',
+                    suggestOnTriggerCharacters: true,
+                    quickSuggestions: true,
+                    folding: true,
+                    lineNumbers: 'on',
+                    glyphMargin: false,
+                    contextmenu: true,
+                    mouseWheelZoom: true,
+                    linkedEditing: true,
+                    formatOnPaste: true,
+                    formatOnType: true,
+                });
+
+                // Listen for changes
+                monacoEditor.onDidChangeModelContent(() => {
+                    if (isEditorUpdating) return;
+                    if (activeFilePath) {
+                        const f = openFiles.find(x => x.path === activeFilePath);
+                        if (f) {
+                            const newVal = monacoEditor.getValue();
+                            if (f.content !== newVal) {
+                                f.content = newVal;
+                                if (!f.isDirty) { f.isDirty = true; renderTabs(); }
+                            }
+                        }
+                    }
+                });
+
+                // Keyboard shortcuts
+                monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { saveCurrentFile(); });
+                monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ, () => { monacoEditor.trigger('keyboard', 'editor.action.undo'); });
+                monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyY, () => { monacoEditor.trigger('keyboard', 'editor.action.redo'); });
+                monacoEditor.addCommand(monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF, () => { formatEditorCode(); });
+                monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => { monacoEditor.trigger('keyboard', 'editor.action.startFindReplaceAction'); });
+
+                // Observe theme changes
+                const themeObserver = new MutationObserver(() => updateMonacoTheme());
+                themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
             });
         }
 
+        function updateMonacoTheme() {
+            if (!monacoEditor) return;
+            state.isDarkMode = document.documentElement.classList.contains('dark');
+            currentMonacoTheme = state.isDarkMode ? 'vs-dark' : 'vs';
+            monaco.editor.setTheme(currentMonacoTheme === 'vs-dark' ? 'twilight' : 'clouds');
+        }
+
+        // Listen for theme toggle on document
+        document.documentElement.addEventListener('DOMContentLoaded', () => {
+            // Theme change observer
+            const observer = new MutationObserver(() => updateMonacoTheme());
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        });
+
         function updateProblemsTab() {
-            const annotations = aceEditor.session.getAnnotations();
             const problemsContainer = document.getElementById('problems-container');
+            if (!problemsContainer) return;
+            // Monaco handles linting internally via the model
+            // This panel is now for custom output/logs
+            const annotations = [];
             let errors = 0;
             let warnings = 0;
 
@@ -981,7 +1229,7 @@ window.formatEditorCode = () => {
                 const iconClass = ann.type === 'error' ? 'ri-error-warning-line' : 'ri-alert-line';
 
                 html += `
-                    <div class="flex gap-2 items-start cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onclick="aceEditor.gotoLine(${ann.row + 1}, ${ann.column}, true)">
+                    <div class="flex gap-2 items-start cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 p-2 rounded transition-colors" onclick="if(monacoEditor) monacoEditor.revealPositionInCenter({lineNumber: ${ann.row + 1}, column: ${ann.column}})">
                         <i class="${iconClass} ${colorClass} mt-0.5 shrink-0"></i>
                         <div class="flex flex-col">
                             <span class="text-xs">${ann.text}</span>
@@ -1045,9 +1293,13 @@ window.formatEditorCode = () => {
 
             document.querySelectorAll('.bottom-tab').forEach(tab => {
                 tab.addEventListener('click', (e) => {
-                    document.querySelectorAll('.bottom-tab').forEach(t => t.classList.remove('font-bold', 'border-b-2', 'border-zinc-800', 'dark:border-zinc-300', 'text-zinc-900', 'dark:text-zinc-100'));
+                    document.querySelectorAll('.bottom-tab').forEach(t => {
+                        t.classList.remove('font-bold', 'border-b-2', 'border-zinc-800', 'dark:border-zinc-300', 'text-zinc-900', 'dark:text-zinc-100', 'active');
+                        t.classList.add('opacity-70');
+                    });
                     const clickedTab = e.currentTarget;
-                    clickedTab.classList.add('font-bold', 'border-b-2', 'border-zinc-800', 'dark:border-zinc-300', 'text-zinc-900', 'dark:text-zinc-100');
+                    clickedTab.classList.add('font-bold', 'border-b-2', 'border-zinc-800', 'dark:border-zinc-300', 'text-zinc-900', 'dark:text-zinc-100', 'active');
+                    clickedTab.classList.remove('opacity-70');
                     
                     ['terminal-container', 'problems-container', 'output-container'].forEach(id => {
                         document.getElementById(id).classList.add('hidden');
@@ -1127,6 +1379,22 @@ window.formatEditorCode = () => {
             let modelOptions = state.aiModels.map(m => `<option value="${m}" ${state.selectedModel === m ? 'selected' : ''}>${m}</option>`).join('');
             if (state.aiModels.length === 0) modelOptions = `<option>Loading models...</option>`;
             
+            // Custom providers list
+            let providersListHTML = '';
+            if (state.customProviders.length > 0) {
+                providersListHTML = '<div class="mt-2"><div class="text-[10px] uppercase font-bold opacity-50 mb-1">Custom Providers</div>';
+                state.customProviders.forEach((cp, i) => {
+                    providersListHTML += `<div class="flex items-center gap-1 text-[10px] py-1 px-2 rounded hover:bg-zinc-200 dark:hover:bg-zinc-800 mb-1">
+                        <span class="truncate flex-1">${cp.name}</span>
+                        <button onclick="editCustomProvider(${i})" class="opacity-50 hover:opacity-100"><i class="ri-edit-line"></i></button>
+                        <button onclick="deleteCustomProvider(${i})" class="opacity-50 hover:text-red-500 hover:opacity-100"><i class="ri-delete-bin-line"></i></button>
+                    </div>`;
+                });
+                providersListHTML += `<button onclick="addCustomProvider()" class="text-[10px] text-blue-500 hover:underline mt-1"><i class="ri-add-line"></i> Add Provider</button></div>`;
+            } else {
+                providersListHTML = '<div class="mt-2"><button onclick="addCustomProvider()" class="text-[10px] text-blue-500 hover:underline"><i class="ri-add-line"></i> Add Custom Provider</button></div>';
+            }
+            
             const modelSelectorHTML = `
                 <div class="px-3 py-2 border-b border-zinc-300 dark:border-zinc-800 flex items-center justify-between text-[11px] shrink-0 bg-zinc-50 dark:bg-zinc-950 gap-2 font-sans">
                     <select class="bg-transparent border border-zinc-300 dark:border-zinc-700 rounded p-1 focus:outline-none flex-1 truncate" onchange="changeProvider(this.value)">
@@ -1140,6 +1408,17 @@ window.formatEditorCode = () => {
                         <button onclick="startNewChat()" class="opacity-50 hover:opacity-100 hover:text-blue-500 transition-colors" title="New Chat"><i class="ri-chat-new-line text-sm"></i></button>
                         <button onclick="resetAIKey()" class="opacity-50 hover:opacity-100 hover:text-red-500 transition-colors" title="Clear API Key"><i class="ri-key-2-line text-sm"></i></button>
                     </div>
+                </div>
+            `;
+            
+            // Add providers section after model selector
+            const providersSectionHTML = `
+                <div class="px-3 py-2 border-b border-zinc-300 dark:border-zinc-800 text-[11px] shrink-0 bg-zinc-50 dark:bg-zinc-950">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-[10px] uppercase font-bold opacity-50">API Providers</span>
+                        <button onclick="toggleOutputPanel()" class="opacity-50 hover:opacity-100" title="Toggle Output Panel"><i class="ri-terminal-box-line text-xs"></i></button>
+                    </div>
+                    ${providersListHTML}
                 </div>
             `;
 
@@ -1219,7 +1498,7 @@ window.formatEditorCode = () => {
                 </div>
             `;
             
-            container.innerHTML = modelSelectorHTML;
+            container.innerHTML = modelSelectorHTML + providersSectionHTML;
             container.appendChild(chatContainer);
             container.appendChild(inputContainer);
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -1359,7 +1638,9 @@ window.formatEditorCode = () => {
             for (const child of rootNode.children) {
                 if (child.name === pathName) return child;
                 if (child.type === 'folder') {
-                    if (child.children.length === 0) await loadDirectoryContents(child.handle, child.children);
+                    if (child.children && child.children.length === 0) {
+                        await loadDirectoryContents(child.handle, child.children);
+                    }
                     const found = await getNodeByPath(pathName, child);
                     if (found) return found;
                 }
@@ -1371,8 +1652,10 @@ window.formatEditorCode = () => {
             try {
                 const args = JSON.parse(argsString);
                 
-                // Read Currently Active File
-                if (name === 'leer_archivo_actual') return state.activeFileHandle && aceEditor ? `[${state.activeFileHandle.name}]:\n${aceEditor.getValue()}` : "Error: No file open.";
+                if (name === 'leer_archivo_actual') {
+                    if (!activeFilePath || !monacoEditor) return "Error: No file open.";
+                    return `[${activeFilePath}]:\n${monacoEditor.getValue()}`;
+                }
                 
                 // List Files
                 if (name === 'listar_archivos_proyecto') {
@@ -1386,6 +1669,11 @@ window.formatEditorCode = () => {
                     if (!state.fileSystemRoot) return "Error: Open workspace first.";
                     const node = await getNodeByPath(args.nombre, state.fileSystemRoot);
                     if (!node || node.type !== 'file') return `Error: File ${args.nombre} not found.`;
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const result = await window.electronAPI.readFile(node.handle);
+                        if (result.error) return `Error: ${result.error}`;
+                        return result.content;
+                    }
                     const file = await node.handle.getFile();
                     return await file.text();
                 }
@@ -1393,7 +1681,18 @@ window.formatEditorCode = () => {
                 // Delete Specific File
                 if (name === 'eliminar_archivo') {
                     if (!state.fileSystemRoot) return "Error: Open workspace first.";
-                    await state.fileSystemRoot.handle.removeEntry(args.nombre);
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const result = await window.electronAPI.listDirectory(state.fileSystemRoot.handle);
+                        if (result.error) return `Error: ${result.error}`;
+                        const exists = result.some(e => e.name === args.nombre && e.isFile);
+                        if (!exists) return `Error: File ${args.nombre} not found.`;
+                        const fs = require('fs');
+                        const path = require('path');
+                        const fullPath = path.join(state.fileSystemRoot.handle, args.nombre);
+                        fs.unlinkSync(fullPath);
+                    } else {
+                        await state.fileSystemRoot.handle.removeEntry(args.nombre);
+                    }
                     state.fileSystemRoot.children = [];
                     await loadDirectoryContents(state.fileSystemRoot.handle, state.fileSystemRoot.children);
                     renderSidebar();
@@ -1403,11 +1702,19 @@ window.formatEditorCode = () => {
                 // Create Specific File
                 if (name === 'crear_archivo') {
                     if (!state.fileSystemRoot) return "Error: Open workspace first.";
-                    const rootHandle = state.fileSystemRoot.handle;
-                    const newFileHandle = await rootHandle.getFileHandle(args.nombre, {create: true});
-                    const writable = await newFileHandle.createWritable();
-                    await writable.write(args.contenido);
-                    await writable.close();
+                    const content = args.contenido || '';
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const fullPath = path.join(state.fileSystemRoot.handle, args.nombre);
+                        fs.writeFileSync(fullPath, content, 'utf8');
+                    } else {
+                        const rootHandle = state.fileSystemRoot.handle;
+                        const newFileHandle = await rootHandle.getFileHandle(args.nombre, {create: true});
+                        const writable = await newFileHandle.createWritable();
+                        await writable.write(content);
+                        await writable.close();
+                    }
                     
                     state.fileSystemRoot.children = [];
                     await loadDirectoryContents(state.fileSystemRoot.handle, state.fileSystemRoot.children);
@@ -1420,28 +1727,34 @@ window.formatEditorCode = () => {
                      if (!state.fileSystemRoot) return "Error: Open workspace first.";
                      const node = await getNodeByPath(args.nombre, state.fileSystemRoot);
                      if (!node || node.type !== 'file') return `Error: File ${args.nombre} not found.`;
-                     const writable = await node.handle.createWritable();
-                     await writable.write(args.nuevo_codigo);
-                     await writable.close();
-                     
-                     // If open in editor, update editor directly
-                     if (state.activeFileHandle && state.activeFileHandle.name === node.name && aceEditor) {
-                         aceEditor.setValue(args.nuevo_codigo, -1);
+                     if (window.electronAPI && window.electronAPI.readFile) {
+                         const fs = require('fs');
+                         const path = require('path');
+                         const fullPath = path.join(node.handle, args.nombre);
+                         fs.writeFileSync(fullPath, args.nuevo_codigo, 'utf8');
+                     } else {
+                         const writable = await node.handle.createWritable();
+                         await writable.write(args.nuevo_codigo);
+                         await writable.close();
                      }
-                     return `Success: File ${args.nombre} updated correctly.`;
+                      
+                      if (activeFilePath && node.handle === activeFilePath && monacoEditor) {
+                           monacoEditor.setValue(args.nuevo_codigo, -1);
+                      }
+                      return `Success: File ${args.nombre} updated correctly.`;
                 }
                 
                 // Modify strictly the UI open active file
                 if (name === 'modificar_archivo_actual') {
-                     if (state.activeFileHandle && aceEditor) { aceEditor.setValue(args.nuevo_codigo, -1); return "Code injected successfully into the editor."; }
-                     return "Error: No file open.";
-                }
+                      if (activeFilePath && monacoEditor) { monacoEditor.setValue(args.nuevo_codigo); return "Code injected successfully into the editor."; }
+                      return "Error: No file open.";
+                  }
                 
                 // Terminal CMD
                 if (name === 'ejecutar_comando_terminal') {
-                     if (window.electronAPI) { window.electronAPI.terminalInput(args.comando + '\r'); return `The command '${args.comando}' was sent.`; }
-                     else if (xtermInstance) { xtermInstance.writeln(`\r\n\x1b[33m$ ${args.comando}\x1b[0m`); return `The command '${args.comando}' was simulated in Web Mode.`; }
-                     return "Error: Terminal not available.";
+                      if (window.electronAPI) { window.electronAPI.terminalInput(args.comando + '\r'); return `The command '${args.comando}' was sent.`; }
+                      else if (xtermInstance) { xtermInstance.writeln(`\r\n\x1b[33m$ ${args.comando}\x1b[0m`); return `The command '${args.comando}' was simulated in Web Mode.`; }
+                      return "Error: Terminal not available.";
                 }
                 return `Error: Tool ${name} does not exist.`;
             } catch(e) { return "Error executing tool: " + e.message; }
@@ -1555,7 +1868,7 @@ window.formatEditorCode = () => {
                     streamContentDiv.innerHTML = `<div class="text-[11px] text-blue-500 font-mono border-l-2 border-blue-500 pl-2 opacity-80 my-1 py-1"><i class="ri-tools-line"></i> Executing: <b>${toolCallData.name}</b>...</div>`;
                     state.aiMessages.push({ role: "assistant", content: null, tool_calls: [{ id: toolCallData.id, type: "function", function: { name: toolCallData.name, arguments: toolCallData.arguments } }] });
                     
-                    let toolResult = await executeTool(toolCallData.name, toolCallData.arguments);
+                    let toolResult = await executeToolEnhanced(toolCallData.name, toolCallData.arguments);
                     state.aiMessages.push({ role: "tool", tool_call_id: toolCallData.id, content: toolResult });
                     
                     aiBubbleWrapper.remove();
@@ -1584,14 +1897,36 @@ window.formatEditorCode = () => {
         // --- UPDATE CHECK ---
         async function checkForUpdates() {
             if (window.electronAPI && window.electronAPI.checkForUpdates) {
-                const update = await window.electronAPI.checkForUpdates();
-                if (update.isUpdate) {
-                    const statusBar = document.querySelector('.status-bar-update') || createUpdateIndicator();
-                    statusBar.innerHTML = '<span class="flex items-center gap-1 cursor-pointer hover:text-blue-500" onclick="openReleases()"><i class="ri-radar-line"></i> Update available: v' + update.version + '</span>';
-                    statusBar.classList.remove('hidden');
+                try {
+                    const update = await window.electronAPI.checkForUpdates();
+                    if (update.isUpdate && update.downloadUrl) {
+                        const statusBar = document.querySelector('.status-bar-update') || createUpdateIndicator();
+                        statusBar.innerHTML = `<span class="flex items-center gap-1 cursor-pointer hover:text-blue-500" onclick="applyUpdate('${update.downloadUrl}', '${update.version}')"><i class="ri-radar-line"></i> Update available: ${update.version}</span>`;
+                        statusBar.classList.remove('hidden');
+                    } else if (update.isUpdate && !update.downloadUrl) {
+                        const statusBar = document.querySelector('.status-bar-update') || createUpdateIndicator();
+                        statusBar.innerHTML = '<span class="flex items-center gap-1 cursor-pointer hover:text-blue-500" onclick="openReleases()"><i class="ri-radar-line"></i> Update available (no .exe)</span>';
+                        statusBar.classList.remove('hidden');
+                    }
+                } catch (e) {
+                    console.warn('Update check failed:', e);
                 }
             }
         }
+        
+        window.applyUpdate = async function(downloadUrl, version) {
+            if (confirm(`Update to ${version}? The app will restart automatically.`)) {
+                try {
+                    const result = await window.electronAPI.applyUpdate({ downloadUrl, version });
+                    if (!result.success) {
+                        alert('Update failed: ' + result.error);
+                    }
+                } catch (e) {
+                    // Fallback: open releases page
+                    window.open('https://github.com/Juanoto2012/Ventarys-IDX/releases', '_blank');
+                }
+            }
+        };
         
 function createUpdateIndicator() {
              const indicator = document.createElement('span');
@@ -1601,11 +1936,333 @@ function createUpdateIndicator() {
              return indicator;
          }
          
-         window.openReleases = () => {
-             if (window.electronAPI && window.electronAPI.getAppVersion) {
-                 window.open('https://github.com/Juanoto2012/IDX/releases', '_blank');
-             }
-         }
-         
-         // Check for updates on startup
-         setTimeout(checkForUpdates, 3000);
+        window.openReleases = () => {
+              if (window.electronAPI && window.electronAPI.getAppVersion) {
+                  window.open('https://github.com/Juanoto2012/IDX/releases', '_blank');
+              }
+          }
+          
+          // Check for updates on startup
+          setTimeout(checkForUpdates, 3000);
+
+        // --- CUSTOM PROVIDERS SYSTEM ---
+        function saveCustomProviders() {
+            localStorage.setItem('ventarys_customProviders', JSON.stringify(state.customProviders));
+        }
+
+        window.addCustomProvider = function() {
+            const name = prompt('Provider name:');
+            if (!name) return;
+            const url = prompt('API URL (must end with /v1):');
+            if (!url) return;
+            const finalUrl = url.endsWith('/v1') ? url : url.replace(/\/+$/, '') + '/v1';
+            const noKey = confirm('Does this provider require an API key?');
+            let key = '';
+            if (!noKey) {
+                key = prompt('API Key:') || '';
+            }
+            state.customProviders.push({ name, url: finalUrl, noKey, key });
+            saveCustomProviders();
+            renderAIPanel(document.getElementById('ai-sidebar-content'));
+        };
+
+        window.deleteCustomProvider = function(index) {
+            if (confirm(`Delete provider "${state.customProviders[index].name}"?`)) {
+                state.customProviders.splice(index, 1);
+                saveCustomProviders();
+                renderAIPanel(document.getElementById('ai-sidebar-content'));
+            }
+        };
+
+        window.editCustomProvider = function(index) {
+            state.editingProviderIndex = index;
+            const cp = state.customProviders[index];
+            const name = prompt('Provider name:', cp.name);
+            if (!name) return;
+            const url = prompt('API URL:', cp.url);
+            if (!url) return;
+            const finalUrl = url.endsWith('/v1') ? url : url.replace(/\/+$/, '') + '/v1';
+            const noKey = confirm('Does this provider require an API key?');
+            let key = '';
+            if (!noKey) key = prompt('API Key:', cp.key) || '';
+            state.customProviders[index] = { name, url: finalUrl, noKey, key };
+            saveCustomProviders();
+            renderAIPanel(document.getElementById('ai-sidebar-content'));
+        };
+
+        function getAllApiConfigs() {
+            const configs = [
+                { id: 'agnes', name: 'Agnes', baseUrl: 'https://apihub.agnes-ai.com/v1', key: state.apiKeys.agnes, noKey: false },
+                { id: 'aqua', name: 'AquaDevs', baseUrl: 'https://api.aquadevs.com/v1', key: state.apiKeys.aquadevs, noKey: false }
+            ];
+            state.customProviders.forEach((cp, i) => {
+                configs.push({ id: `custom_${i}`, name: cp.name, baseUrl: cp.url, key: cp.key, noKey: cp.noKey });
+            });
+            return configs;
+        }
+
+        // --- CONTEXT MENU SYSTEM ---
+        function setupContextMenu() {
+            const ctxMenu = document.getElementById('context-menu');
+            
+            const contextTargets = [
+                'monaco-container', 'terminal-container', 'ai-chat-history', 'ai-input',
+                'ai-key-input', 'sidebar-content', 'editor-placeholder'
+            ];
+
+            document.addEventListener('contextmenu', (e) => {
+                let showMenu = false;
+                let target = e.target;
+                
+                while (target && target !== document.body) {
+                    const id = target.id;
+                    if (contextTargets.includes(id)) { showMenu = true; break; }
+                    if ((target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') && 
+                        (target.type !== 'checkbox' && target.type !== 'radio')) {
+                        showMenu = true; break;
+                    }
+                    target = target.parentElement;
+                }
+                
+                if (!showMenu) return;
+                
+                e.preventDefault();
+                state.contextTarget = e.target;
+                
+                let x = e.clientX;
+                let y = e.clientY;
+                
+                const menuW = 200;
+                const menuH = 250;
+                if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 10;
+                if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 10;
+                
+                ctxMenu.style.left = x + 'px';
+                ctxMenu.style.top = y + 'px';
+                ctxMenu.classList.remove('hidden');
+            });
+            
+            document.addEventListener('click', () => {
+                ctxMenu.classList.add('hidden');
+            });
+            
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    ctxMenu.classList.add('hidden');
+                }
+            });
+        }
+
+        window.contextMenuAction = function(action) {
+            document.getElementById('context-menu').classList.add('hidden');
+            
+            const target = state.contextTarget;
+            const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+            
+            switch(action) {
+                case 'cut':
+                    if (isTextInput && target.readyState !== 0) {
+                        document.execCommand('cut');
+                    } else if (monacoEditor) {
+                        monacoEditor.trigger('contextmenu', 'editor.action.cut');
+                    }
+                    break;
+                case 'copy':
+                    if (isTextInput && target.readyState !== 0) {
+                        document.execCommand('copy');
+                    } else if (monacoEditor) {
+                        monacoEditor.trigger('contextmenu', 'editor.action.clipboardCopyAction');
+                    }
+                    break;
+                case 'paste':
+                    if (isTextInput && target.readyState !== 0) {
+                        navigator.clipboard.readText().then(text => {
+                            const start = target.selectionStart;
+                            const end = target.selectionEnd;
+                            target.value = target.value.substring(0, start) + text + target.value.substring(end);
+                            target.selectionStart = target.selectionEnd = start + text.length;
+                            target.dispatchEvent(new Event('input', { bubbles: true }));
+                        }).catch(() => document.execCommand('paste'));
+                    } else if (monacoEditor) {
+                        monacoEditor.trigger('contextmenu', 'editor.action.clipboardPasteAction');
+                    }
+                    break;
+                case 'selectAll':
+                    if (isTextInput && target.readyState !== 0) {
+                        target.select();
+                    } else if (monacoEditor) {
+                        monacoEditor.trigger('contextmenu', 'editor.action.selectAll');
+                    }
+                    break;
+                case 'formatCode':
+                    window.formatEditorCode();
+                    break;
+                case 'inlineAI':
+                    if (state.activeFileHandle) {
+                        const box = document.getElementById('inline-ai-box');
+                        box.classList.remove('hidden');
+                        document.getElementById('inline-ai-input').focus();
+                    }
+                    break;
+            }
+        };
+
+        // --- OUTPUT PANEL SYSTEM ---
+        function addOutputLine(text, type = 'system') {
+            const timestamp = new Date().toLocaleTimeString();
+            state.outputLines.push({ text, type, timestamp });
+            
+            const content = document.getElementById('output-container');
+            if (!content) return;
+            
+            const line = document.createElement('div');
+            line.className = `output-line ${type}`;
+            line.textContent = `[${timestamp}] ${text}`;
+            content.appendChild(line);
+            content.scrollTop = content.scrollHeight;
+            
+            // Keep DOM manageable
+            const allLines = content.querySelectorAll('.output-line');
+            if (allLines.length > 100) {
+                Array.from(allLines).slice(0, allLines.length - 100).forEach(l => l.remove());
+            }
+        }
+
+        window.toggleOutputPanel = function() {
+            const panel = document.getElementById('output-container');
+            if (panel) {
+                state.outputPanelVisible = !state.outputPanelVisible;
+                if (state.outputPanelVisible) {
+                    panel.classList.remove('hidden');
+                    panel.classList.add('absolute', 'inset-2');
+                    document.querySelector('.bottom-tab[data-target="output-container"]').click();
+                }
+            }
+        };
+
+        window.clearOutput = function() {
+            const content = document.getElementById('output-container');
+            if (content) content.innerHTML = '<div class="text-zinc-500 text-xs italic p-2">Output cleared.</div>';
+            state.outputLines = [];
+        };
+
+        // --- ENHANCED TOOL SYSTEM WITH CUSTOM PROVIDERS ---
+        async function executeToolWithProvider(name, argsString, providerOverride) {
+            const conf = providerOverride || getApiConfig();
+            const allProviders = getAllApiConfigs();
+            let activeKey = conf.key;
+            let activeBaseUrl = conf.baseUrl;
+            
+            if (providerOverride) {
+                activeKey = providerOverride.key;
+                activeBaseUrl = providerOverride.baseUrl;
+            } else {
+                activeKey = getActiveKey();
+                activeBaseUrl = getApiConfig().baseUrl;
+            }
+            
+            if (!activeKey) return "Error: No API key configured.";
+            
+            try {
+                const args = JSON.parse(argsString);
+                
+                if (name === 'leer_archivo_actual') {
+                    if (!activeFilePath || !monacoEditor) return "Error: No file open.";
+                    return `[${activeFilePath}]:\n${monacoEditor.getValue()}`;
+                }
+                
+                if (name === 'listar_archivos_proyecto') {
+                    if (!state.fileSystemRoot) return "Error: No folder opened.";
+                    const listAll = (nodes) => nodes.map(n => n.type === 'folder' ? `[DIR] ${n.name}` : n.name).join('\n');
+                    return `Root: ${state.fileSystemRoot.name}\nFiles in root:\n${listAll(state.fileSystemRoot.children)}`;
+                }
+
+                if (name === 'leer_archivo') {
+                    if (!state.fileSystemRoot) return "Error: Open workspace first.";
+                    const node = await getNodeByPath(args.nombre, state.fileSystemRoot);
+                    if (!node || node.type !== 'file') return `Error: File ${args.nombre} not found.`;
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const result = await window.electronAPI.readFile(node.handle);
+                        if (result.error) return `Error: ${result.error}`;
+                        return result.content;
+                    }
+                    const file = await node.handle.getFile();
+                    return await file.text();
+                }
+
+                if (name === 'eliminar_archivo') {
+                    if (!state.fileSystemRoot) return "Error: Open workspace first.";
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const fullPath = path.join(state.fileSystemRoot.handle, args.nombre);
+                        fs.unlinkSync(fullPath);
+                    } else {
+                        await state.fileSystemRoot.handle.removeEntry(args.nombre);
+                    }
+                    state.fileSystemRoot.children = [];
+                    await loadDirectoryContents(state.fileSystemRoot.handle, state.fileSystemRoot.children);
+                    renderSidebar();
+                    return `Success: ${args.nombre} was deleted.`;
+                }
+
+                if (name === 'crear_archivo') {
+                    if (!state.fileSystemRoot) return "Error: Open workspace first.";
+                    const content = args.contenido || '';
+                    if (window.electronAPI && window.electronAPI.readFile) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const fullPath = path.join(state.fileSystemRoot.handle, args.nombre);
+                        fs.writeFileSync(fullPath, content, 'utf8');
+                    } else {
+                        const rootHandle = state.fileSystemRoot.handle;
+                        const newFileHandle = await rootHandle.getFileHandle(args.nombre, {create: true});
+                        const writable = await newFileHandle.createWritable();
+                        await writable.write(content);
+                        await writable.close();
+                    }
+                    
+                    state.fileSystemRoot.children = [];
+                    await loadDirectoryContents(state.fileSystemRoot.handle, state.fileSystemRoot.children);
+                    renderSidebar();
+                    return `Success: File ${args.nombre} was successfully created.`;
+                }
+
+                if (name === 'editar_archivo') {
+                     if (!state.fileSystemRoot) return "Error: Open workspace first.";
+                     const node = await getNodeByPath(args.nombre, state.fileSystemRoot);
+                     if (!node || node.type !== 'file') return `Error: File ${args.nombre} not found.`;
+                     if (window.electronAPI && window.electronAPI.readFile) {
+                         const fs = require('fs');
+                         const path = require('path');
+                         const fullPath = path.join(node.handle, args.nombre);
+                         fs.writeFileSync(fullPath, args.nuevo_codigo, 'utf8');
+                     } else {
+                         const writable = await node.handle.createWritable();
+                         await writable.write(args.nuevo_codigo);
+                         await writable.close();
+                     }
+                      
+                       if (activeFilePath && node.handle === activeFilePath && monacoEditor) {
+                           monacoEditor.setValue(args.nuevo_codigo);
+                       }
+                       return `Success: File ${args.nombre} updated correctly.`;
+                  }
+                  
+                  if (name === 'modificar_archivo_actual') {
+                       if (activeFilePath && monacoEditor) { monacoEditor.setValue(args.nuevo_codigo); return "Code injected successfully into the editor."; }
+                      return "Error: No file open.";
+                }
+                
+                if (name === 'ejecutar_comando_terminal') {
+                     if (window.electronAPI) { window.electronAPI.terminalInput(args.comando + '\r'); return `The command '${args.comando}' was sent.`; }
+                     else if (xtermInstance) { xtermInstance.writeln(`\r\n\x1b[33m$ ${args.comando}\x1b[0m`); return `The command '${args.comando}' was simulated in Web Mode.`; }
+                     return "Error: Terminal not available.";
+                }
+                return `Error: Tool ${name} does not exist.`;
+            } catch(e) { return "Error executing tool: " + e.message; }
+        }
+
+        // Override executeTool to use enhanced version
+        const originalExecuteTool = executeTool;
+        window.executeToolEnhanced = executeToolWithProvider;
