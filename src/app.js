@@ -955,7 +955,6 @@
                     div.onclick = async (event) => {
                         event.stopPropagation();
                         openFile({ name: node.name, handle: node.handle, _fullPath: node.handle, size: node.size || 0 });
-                        notify('File opened', node.name);
                     };
                 }
 
@@ -999,7 +998,6 @@
             if (!tooLarge && window.electronAPI && window.electronAPI.readFile) {
                 const result = await window.electronAPI.readFile(filePath);
                 if (result.error) {
-                    showToast(`Error opening file: ${result.error}`, 'error');
                     return;
                 }
                 content = result.content;
@@ -1010,7 +1008,6 @@
                 content = result.content;
                 size = result.size || size;
                 loaded = true;
-                showToast(`Large file (${(size / 1024 / 1024).toFixed(2)} MB) opened in streaming mode`, 'info');
             } else {
                 const fileData = await fileNode.handle.getFile();
                 content = await fileData.text();
@@ -1057,8 +1054,6 @@
         if (statusLang) statusLang.textContent = existing.name.split('.').pop().toUpperCase();
 
         renderTabs();
-        renderSidebar();
-        showToast(`Opened: ${existing.name}`, 'info');
     }
 
     async function saveCurrentFile() {
@@ -1279,8 +1274,6 @@
 window.revealDiagnostic = async (filePath, line, column) => {
         const f = state.openFiles.find(x => x.path === filePath);
         if (!f) {
-            // try opening via explorer path: find node? simplest: ask user to open folder/file
-            showToast('Open the file first, then click the diagnostic', 'warning');
             return;
         }
         if (!f.loaded) {
@@ -1291,14 +1284,6 @@ window.revealDiagnostic = async (filePath, line, column) => {
         if (monacoEditor) {
             monacoEditor.revealPositionInCenter({ lineNumber: line, column: column });
         }
-    };
-
-    window.openProblemsTab = () => {
-        if (!state.isTerminalOpen) {
-            document.getElementById('btn-toggle-term').click();
-        }
-        const problemTabBtn = document.querySelector('.bottom-tab[data-target="problems-container"]');
-        if (problemTabBtn) problemTabBtn.click();
     };
 
     function updateProblemsTab() {
@@ -1395,7 +1380,7 @@ window.revealDiagnostic = async (filePath, line, column) => {
                 document.getElementById('window-title-file').textContent = `- ${file.name}`;
                 renderTabs();
             };
-            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" style="opacity: ${isActive ? '1' : ''}" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
+            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 opacity-100 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
             container.appendChild(tab);
         });
     }
