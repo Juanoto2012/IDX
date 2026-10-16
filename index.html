@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IDX Editor - Ventarys AI</title>
+    <title>IDX Editor - JJDev Studio</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -12,7 +12,7 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"Ubuntu Sans"', 'sans-serif'],
+                        sans: ['"Google Sans"', '"Ubuntu Sans"', 'sans-serif'],
                         mono: ['monospace']
                     },
                     colors: {
@@ -39,7 +39,6 @@
     <!-- Monaco Editor -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
 
-    <script src="https://js.puter.com/v2/"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 
 <link rel="stylesheet" href="src/app.css" />
@@ -53,7 +52,6 @@
     <div class="context-menu-option" onclick="contextMenuAction('selectAll')"><i class="ri-checkbox-multiple-line"></i> Select All</div>
     <hr class="context-menu-divider">
     <div class="context-menu-option" onclick="contextMenuAction('formatCode')"><i class="ri-code-line"></i> Format Code</div>
-    <div class="context-menu-option" onclick="contextMenuAction('inlineAI')"><i class="ri-sparkling-fill"></i> Ask Ventarys AI</div>
 </div>
 </head>
 <body class="bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 flex flex-col h-screen transition-colors duration-200 font-sans">
@@ -153,10 +151,6 @@
             <div class="activity-icon left-activity" data-panel="search" title="Search"><i class="ri-search-line"></i></div>
             <div class="activity-icon left-activity" data-panel="git" title="Source Control"><i class="ri-git-merge-line"></i></div>
             <div class="activity-icon left-activity" data-panel="extensions" title="Governance"><i class="ri-apps-2-line"></i></div>
-            <div class="flex-1"></div>
-            <div class="activity-icon right-activity items-center" data-panel="ai" title="Ventarys AI">
-                <img src="assets/ventarys.png" alt="AI" class="w-7 h-7 object-cover rounded-full shadow-sm dark:invert" onerror="this.outerHTML='<i class=&quot;ri-magic-line text-[1.2em]&quot;></i>'">
-            </div>
             <div class="activity-icon left-activity" data-panel="settings" title="Settings"><i class="ri-settings-3-line"></i></div>
         </div>
 
@@ -179,12 +173,6 @@
                     </div>
                 </div>
                 <div id="monaco-container" class="absolute inset-0 hidden"></div>
-                
-                <div id="inline-ai-box" class="hidden absolute top-10 left-1/2 transform -translate-x-1/2 w-3/4 max-w-2xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-2xl p-2 z-50 flex items-center gap-2 font-sans">
-                    <i class="ri-sparkling-fill text-purple-500"></i>
-                    <input type="text" id="inline-ai-input" placeholder="Ask Ventarys to edit this file... (e.g., Create a sum function and press Enter)" class="flex-1 bg-transparent border-none focus:outline-none text-xs font-sans dark:text-zinc-100">
-                    <button id="inline-ai-close" class="text-xs opacity-50 hover:opacity-100"><i class="ri-close-line"></i></button>
-                </div>
             </div>
 
             <div id="terminal-area" class="hidden h-64 flex flex-col bg-zinc-50 dark:bg-[#09090b] relative flex-shrink-0">
@@ -212,27 +200,14 @@
                     </div>
                     <div id="output-container" class="absolute inset-2 hidden overflow-y-auto font-mono text-[11px] p-2 whitespace-pre-wrap">
 [IDX System] Initializing Output services...
-[Ventarys] System monitor online. Ready to compile complaints.</div>
+[IDX System] Language services ready.</div>
                 </div>
             </div>
-        </div>
-
-        <div id="ai-panel" class="hidden w-80 flex flex-col border-l border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 transition-all flex-shrink-0 relative">
-            <div id="resizer-ai" class="resizer-v absolute top-0 left-[-2px] bottom-0"></div>
-            <div class="p-3 uppercase text-xs font-bold opacity-70 tracking-wider flex justify-between items-center border-b border-zinc-300 dark:border-zinc-800 shrink-0 font-sans">
-                <span>VENTARYS AI</span>
-                <div class="flex gap-3 text-sm">
-                    <i class="ri-save-line cursor-pointer hover:text-blue-500" onclick="saveChatToHistory()" title="Save Chat"></i>
-                    <i class="ri-history-line cursor-pointer hover:text-purple-500" onclick="toggleHistoryView()" title="View History"></i>
-                    <i class="ri-close-line cursor-pointer hover:text-red-500" onclick="closeAIPanel()" title="Close"></i>
-                </div>
-            </div>
-            <div id="ai-sidebar-content" class="flex-1 flex flex-col overflow-hidden relative"></div>
         </div>
 
     </div>
 
-<div class="h-6 flex items-center justify-between px-3 text-[11px] font-mono border-t border-zinc-300 dark:border-zinc-800 bg-zinc-200 dark:bg-zinc-900 select-none status-bar-update">
+    <div class="h-6 flex items-center justify-between px-3 text-[11px] font-mono border-t border-zinc-300 dark:border-zinc-800 bg-zinc-200 dark:bg-zinc-900 select-none status-bar-update">
          <div class="flex items-center gap-4">
              <span id="status-git-branch" class="flex items-center gap-1 cursor-pointer hover:opacity-70" onclick="document.querySelector('[data-panel=\'git\']').click()"><i class="ri-git-branch-line"></i> No Git</span>
              <span class="flex items-center gap-1 cursor-pointer hover:opacity-70"><i class="ri-refresh-line"></i></span>
@@ -243,11 +218,12 @@
             <span id="status-os" class="opacity-70">Detecting OS...</span>
             <span id="status-encoding" class="hidden">UTF-8</span>
             <span id="status-lang" class="hidden">TXT</span>
+            <span id="status-memory" class="hidden">RAM: 0 MB</span>
             <span id="btn-toggle-term" class="cursor-pointer hover:opacity-70 text-sm"><i class="ri-terminal-box-line"></i></span>
         </div>
     </div>
 
-    <input type="file" id="ai-attachment-input" class="hidden" multiple>
+    <input type="file" id="file-attachment-input" class="hidden" multiple>
     <div id="toast-container" class="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
 
     <script src="src/app.js"></script>

@@ -1,15 +1,26 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification } = require('electron');
 const path = require('path');
 const os = require('os');
 const pty = require('node-pty');
 const http = require('http');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
-const appVersion = '1.0.1';
-const REPO_RELEASE_URL = 'https://api.github.com/repos/Juanoto2012/Ventarys-IDX/releases/latest';
+const appVersion = '2.0.0';
+const REPO_RELEASE_URL = 'https://api.github.com/repos/Juanoto2012/IDX/releases/latest';
+
+const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2 MB: files above this are opened in streaming/range mode
+const MAX_READ_CHUNK = 2 * 1024 * 1024;
 
 let server = null;
 let baseDir = '';
+const lspProcesses = new Map();
+
+function lspFrame(message) {
+  const body = JSON.stringify(message);
+  const len = Buffer.byteLength(body);
+  return `Content-Length: ${len}\r\n\r\n${body}`;
+}
 
 function getResourceDir() {
   if (!app.isPackaged) {
@@ -263,7 +274,7 @@ function createWindow() {
       const https = require('https');
       
       try {
-        const tempExePath = path.join(os.tmpdir(), `Ventarys_Update_${version}.exe`);
+        const tempExePath = path.join(os.tmpdir(), `JJDev_Update_${version}.exe`);
         const currentExePath = process.execPath;
         const currentDir = path.dirname(currentExePath);
         
@@ -281,11 +292,11 @@ function createWindow() {
         });
         
         // Create batch script for update
-        const batPath = path.join(os.tmpdir(), `update_ventarys_${Date.now()}.bat`);
+        const batPath = path.join(os.tmpdir(), `update_jjdev_${Date.now()}.bat`);
         const batContent = `@echo off
 chcp 65001 > nul
 setlocal EnableDelayedExpansion
-echo Waiting for Ventarys to close...
+echo Waiting for JJDev Studio to close...
 timeout /t 3 /nobreak > nul
 copy /Y "${tempExePath}" "${currentExePath}" > nul
 del "${tempExePath}" > nul
@@ -310,6 +321,61 @@ del "%~f0"
       }
     });
     ipcMain.handle('get-app-version', () => appVersion);
+
+    ipcMain.handle('lsp-spawn', async (event, { id, command, args = [], cwd }) => {
+      try {
+        if (lspProcesses.has(id)) return { ok: true };
+        const proc = spawn(command, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env } });
+        lspProcesses.set(id, proc);
+        proc.stdout.on('data', (d) => {
+          if (!win || win.isDestroyed()) return;
+          win.webContents.send(`lsp-output-${id}`, d.toString('utf8'));
+        });
+        proc.stderr.on('data', () => {});
+        proc.on('close', () => { lspProcesses.delete(id); });
+        proc.on('error', (e) => {
+          console.error(`LSP ${id} error:`, e.message);
+          lspProcesses.delete(id);
+        });
+        return { ok: true, pid: proc.pid };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    });
+
+    ipcMain.handle('lsp-send', (event, { id, message }) => {
+      const proc = lspProcesses.get(id);
+      if (!proc || !proc.stdin || proc.stdin.destroyed) return { ok: false };
+      try {
+        proc.stdin.write(lspFrame(message));
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    });
+
+    ipcMain.handle('lsp-stop', (event, { id }) => {
+      const proc = lspProcesses.get(id);
+      if (proc) {
+        try { proc.kill(); } catch (e) {}
+        lspProcesses.delete(id);
+      }
+      return { ok: true };
+    });
+
+    ipcMain.handle('get-memory-info', () => {
+      const mem = process.memoryUsage();
+      const total = os.totalmem();
+      const free = os.freemem();
+      return {
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+        rss: Math.round(mem.rss / 1024 / 1024),
+        totalMemMB: Math.round(total / 1024 / 1024),
+        freeMemMB: Math.round(free / 1024 / 1024)
+      };
+    });
+
     ipcMain.handle('get-directory-handle', (event, dirPath) => {
       try {
         const savedDir = path.resolve(dirPath);
@@ -339,18 +405,36 @@ del "%~f0"
         return entries.map(e => ({
           name: e.name,
           isFile: e.isFile(),
-          isDirectory: e.isDirectory()
+          isDirectory: e.isDirectory(),
+          path: path.join(resolved, e.name)
         }));
       } catch (e) {
         return { error: e.message };
       }
     });
     
-    ipcMain.handle('read-file', (event, filePath) => {
+    ipcMain.handle('read-file', async (event, { filePath, start, end } = {}) => {
       try {
         const resolved = path.resolve(filePath);
         if (!fs.existsSync(resolved)) return { error: 'File not found' };
-        return { content: fs.readFileSync(resolved, 'utf8') };
+        const stat = fs.statSync(resolved);
+        const size = stat.size;
+        if (start === undefined && end === undefined) {
+          if (size > LARGE_FILE_THRESHOLD) {
+            return { error: 'File too large for full read. Open a range instead.', size, tooLarge: true };
+          }
+          return { content: fs.readFileSync(resolved, 'utf8'), size, tooLarge: false };
+        }
+        const readStart = Math.max(0, start || 0);
+        const readEnd = end === undefined ? size : Math.min(Math.max(0, end), size);
+        if (readStart >= readEnd) return { content: '', size, tooLarge: false };
+        return new Promise((resolve, reject) => {
+          const chunks = [];
+          const stream = fs.createReadStream(resolved, { start: readStart, end: readEnd - 1, encoding: 'utf8' });
+          stream.on('data', c => chunks.push(c));
+          stream.on('end', () => resolve({ content: chunks.join(''), size, tooLarge: false, range: [readStart, readEnd] }));
+          stream.on('error', reject);
+        });
       } catch (e) {
         return { error: e.message };
       }

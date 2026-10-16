@@ -1,14 +1,14 @@
 {
   "name": "idx-editor",
-  "version": "1.0.0",
-  "description": "IDX Editor impulsado por Ventarys AI",
+  "version": "2.0.0",
+  "description": "IDX Editor by JJDev Studio",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder -w"
   },
-  "author": "JNTX Studio",
+  "author": "JJDev Studio",
   "license": "MIT",
   "dependencies": {
     "node-pty": "^1.0.0"
@@ -18,8 +18,8 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.ventarys.idx",
-    "productName": "IDX Editor",
+    "appId": "com.jjdevstudio.idx",
+    "productName": "JJDev Studio - IDX Editor",
     "directories": {
       "output": "dist"
     },

@@ -1,7 +1,7 @@
-     @import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800&display=swap');
-        
-        /* Base styles and UI - Ubuntu Sans Applied Globally */
-        body { margin: 0; overflow: hidden; user-select: none; font-family: 'Ubuntu Sans', Tahoma, Geneva, Verdana, sans-serif; }
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu+Sans:ital,wght@0,100..800;1,100..800&display=swap');
+
+/* Base styles and UI - Google Sans Applied Globally */
+body { margin: 0; overflow: hidden; user-select: none; font-family: 'Google Sans', 'Ubuntu Sans', Tahoma, Geneva, Verdana, sans-serif; }
         .drag-region { -webkit-app-region: drag; }
         .no-drag { -webkit-app-region: no-drag; }
         
@@ -55,9 +55,6 @@
         
         .attachment-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 10px; background: rgba(128,128,128,0.2); }
         
-        .ai-loader svg { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
         /* Context Menu Styles */
         .context-menu {
             position: fixed;
@@ -69,7 +66,7 @@
             padding: 4px 0;
             min-width: 200px;
             font-size: 12px;
-            font-family: 'Ubuntu Sans', sans-serif;
+            font-family: 'Google Sans', sans-serif;
         }
         .dark .context-menu {
             background: #18181b;
@@ -93,16 +90,6 @@
         .context-menu-divider { border: none; border-top: 1px solid #d4d4d8; margin: 4px 0; }
         .dark .context-menu-divider { border-color: #3f3f46; }
 
-        /* AI Cursor Animation */
-        .ai-cursor {
-            box-shadow: 0 0 0 2px #3b82f6 !important;
-            animation: aiCursorPulse 1s ease-in-out infinite;
-        }
-        @keyframes aiCursorPulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
          /* Output Panel Styles */
          .output-line { padding: 2px 0; font-size: 11px; font-family: monospace; }
          .output-line.system { color: #8b949e; }
@@ -120,7 +107,7 @@
              padding: 10px 12px;
              border-radius: 8px;
              font-size: 12px;
-             font-family: 'Ubuntu Sans', sans-serif;
+             font-family: 'Google Sans', sans-serif;
              color: #fff;
              box-shadow: 0 6px 18px rgba(0,0,0,0.25);
              border: 1px solid rgba(255,255,255,0.1);

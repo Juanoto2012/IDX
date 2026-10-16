@@ -1,18 +1,21 @@
 # IDX Editor
 
-A modern desktop code editor powered by Ventarys AI, built with Electron.
+A lightweight desktop code editor by JJDev Studio, built with Electron + Monaco Editor + xterm.js.
 
 ## Features
 
 - **Multi-platform**: Runs on Windows, macOS, and Linux
-- **Advanced Code Editor**: Built with ACE editor for syntax highlighting and code editing
+- **Advanced Code Editor**: Monaco Editor with syntax highlighting, theming (Twilight/Clouds), minimap, and formatting
+- **Large File Support**: Files larger than 2 MB open in streaming/range mode without blocking RAM
 - **Integrated Terminal**: Full-featured terminal with xterm.js
-- **Ventarys AI Integration**: AI-powered code assistance via Puter.js
+- **Language Servers**: Uses LSPs already installed on the device (tsserver, pylsp, etc.) with diagnostics in the Problems panel
+- **Cache & RAM Management**: Bounded file cache (12 files / 100 MB) with auto-eviction and a RAM status bar
 - **Git Integration**: Built-in Git operations (status, add, commit, push, pull)
 - **Offline Support**: Service Worker caches CDN resources for offline use
 - **Dark/Light Theme**: Toggle between dark and light modes
 - **File Explorer**: Sidebar file browsing and management
-- **Search**: Integrated file search functionality
+- **Search**: Integrated file search
+- **AGENTS.md**: Project agent-directives panel in the Extensions sidebar
 
 ## Installation
 
@@ -47,33 +50,37 @@ The built application will be available in the `dist/` directory.
 - **Ctrl+S**: Save current file
 - **Shift+Alt+F**: Format code
 - **Ctrl+J**: Toggle terminal
-- **Ctrl+Z**: Undo
-- **Ctrl+Y**: Redo
+- **Ctrl+Z**: Undo / **Ctrl+Y**: Redo
+- **Ctrl+F**: Find
 
 ## Project Structure
 
 ```
 IDX/
+├── AGENTS.md           # Agent directives for this repository
+├── RELEASE_NOTES.md    # Release notes
 ├── index.html          # Main application window
 ├── main.js             # Electron main process
-├── preload.js          # Preload script for security
+├── preload.js          # Preload script for security (contextBridge IPC)
 ├── splash.html         # Splash screen
 ├── src/
 │   ├── app.js          # Frontend application logic
 │   └── app.css         # Application styles
 ├── assets/
 │   ├── logo.svg        # Application logo
-│   └── ventarys.png    # AI panel logo
+│   └── logo.ico        # Application icon
+├── docs/
+│   └── index.html      # Docs site
 └── package.json
 ```
 
 ## Technologies
 
 - [Electron](https://www.electronjs.org/) - Desktop app framework
-- [ACE Editor](https://ace.c9.io/) - Code editor component
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/) - Code editor component
 - [xterm.js](https://xtermjs.org/) - Terminal emulator
 - [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [Puter.js](https://puter.com/) - AI integration
+- Device-installed Language Servers (LSP) - IntelliSense and diagnostics
 
 ## License
 
