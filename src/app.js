@@ -882,6 +882,41 @@
             return;
         }
 
+        // --- OPEN EDITORS SECTION (VSCode-like) ---
+        if (state.openFiles.length > 0) {
+            const openEditorsSection = document.createElement('div');
+            openEditorsSection.className = 'border-b border-zinc-300 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 shrink-0';
+            openEditorsSection.innerHTML = `
+                <div class="flex items-center justify-between px-2 py-1 border-b border-zinc-300 dark:border-zinc-800">
+                    <span class="text-[10px] font-bold opacity-60 uppercase tracking-wider font-sans">Open Editors</span>
+                    <i class="ri-files-line text-xs opacity-40"></i>
+                </div>
+                <div id="open-editors-list" class="py-1"></div>
+            `;
+            container.appendChild(openEditorsSection);
+
+            const openEditorsList = document.getElementById('open-editors-list');
+            state.openFiles.forEach(file => {
+                const isActive = file.path === state.activeFilePath;
+                const item = document.createElement('div');
+                item.className = `flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-zinc-300 dark:hover:bg-zinc-800 transition-colors truncate ${isActive ? (state.isDarkMode ? 'bg-zinc-800' : 'bg-zinc-200') : ''}`;
+                item.innerHTML = `
+                    <i class="${getFileIcon(file.name)} text-xs ${file.isDirty ? 'text-yellow-500' : 'opacity-70'}"></i>
+                    <span class="text-xs truncate flex-1">${file.name}</span>
+                    <i class="ri-close-line text-xs opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>
+                `;
+                item.onclick = () => {
+                    state.activeFilePath = file.path;
+                    state.activeFileHandle = file.handle;
+                    openFile(file);
+                    document.getElementById('window-title-file').textContent = `- ${file.name}`;
+                    renderTabs();
+                    renderExplorer(container);
+                };
+                openEditorsList.appendChild(item);
+            });
+        }
+
         const renderTree = (nodes, parentEl, depth = 0) => {
             nodes.forEach(node => {
                 const div = document.createElement('div');
@@ -919,8 +954,7 @@
                     div.innerHTML = `<i class="ri-checkbox-blank-circle-fill opacity-0 text-[4px] w-[10px]"></i><i class="${getFileIcon(node.name)} text-sm"></i><span>${node.name}</span><span class="text-[10px] opacity-40 ml-1">${sizeLabel}</span>`;
                     div.onclick = async (event) => {
                         event.stopPropagation();
-                        const filePath = await window.electronAPI.pathJoin(node.handle, node.name);
-                        openFile({ name: node.name, handle: filePath, _fullPath: filePath, size: node.size || 0 });
+                        openFile({ name: node.name, handle: node.handle, _fullPath: node.handle, size: node.size || 0 });
                         notify('File opened', node.name);
                     };
                 }
@@ -1361,16 +1395,16 @@ window.revealDiagnostic = async (filePath, line, column) => {
                 document.getElementById('window-title-file').textContent = `- ${file.name}`;
                 renderTabs();
             };
-            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" style="opacity: ${isActive ? '1' : ''}" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.name.replace(/'/g, "\\'")}')"></i>`;
+            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" style="opacity: ${isActive ? '1' : ''}" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
             container.appendChild(tab);
         });
     }
 
-    window.closeFileProxy = (e, filename) => {
-        const idx = state.openFiles.findIndex(f => f.name === filename);
+    window.closeFileProxy = (e, filePath) => {
+        const idx = state.openFiles.findIndex(f => f.path === filePath);
         if (idx > -1) {
             state.openFiles.splice(idx, 1);
-            if (state.activeFilePath === state.openFiles[idx]?.path) {
+            if (state.activeFilePath === filePath) {
                 state.activeFilePath = state.openFiles.length > 0 ? state.openFiles[Math.max(0, idx - 1)].path : null;
                 if (state.activeFilePath) {
                     const next = state.openFiles.find(f => f.path === state.activeFilePath);

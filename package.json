@@ -19,7 +19,7 @@
   },
   "build": {
     "appId": "com.jjdevstudio.idx",
-    "productName": "JJDev Studio - IDX Editor",
+    "productName": "IDX IDE",
     "directories": {
       "output": "dist"
     },
