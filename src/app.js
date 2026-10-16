@@ -903,7 +903,7 @@
                 item.innerHTML = `
                     <i class="${getFileIcon(file.name)} text-xs ${file.isDirty ? 'text-yellow-500' : 'opacity-70'}"></i>
                     <span class="text-xs truncate flex-1">${file.name}</span>
-                    <i class="ri-close-line text-xs opacity-0 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>
+                    <i class="ri-close-line text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>
                 `;
                 item.onclick = () => {
                     state.activeFilePath = file.path;
@@ -1093,6 +1093,10 @@
             if (e.shiftKey && e.altKey && (e.key === 'f' || e.key === 'F')) {
                 e.preventDefault();
                 window.formatEditorCode();
+            }
+            if (e.ctrlKey && e.key === 'w') {
+                e.preventDefault();
+                if (state.activeFilePath) closeFileProxy(e, state.activeFilePath);
             }
         });
     }
@@ -1380,7 +1384,7 @@ window.revealDiagnostic = async (filePath, line, column) => {
                 document.getElementById('window-title-file').textContent = `- ${file.name}`;
                 renderTabs();
             };
-            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 opacity-100 group-hover:opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
+            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
             container.appendChild(tab);
         });
     }
