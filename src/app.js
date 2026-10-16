@@ -903,7 +903,7 @@
                 item.innerHTML = `
                     <i class="${getFileIcon(file.name)} text-xs ${file.isDirty ? 'text-yellow-500' : 'opacity-70'}"></i>
                     <span class="text-xs truncate flex-1">${file.name}</span>
-                    <i class="ri-close-line text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>
+                    <i class="ri-close-line text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" data-close-path="${file.path.replace(/"/g, '&quot;')}" onclick="closeFileFromEditor(this)"></i>
                 `;
                 item.onclick = () => {
                     state.activeFilePath = file.path;
@@ -1384,7 +1384,7 @@ window.revealDiagnostic = async (filePath, line, column) => {
                 document.getElementById('window-title-file').textContent = `- ${file.name}`;
                 renderTabs();
             };
-            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" onclick="arguments[0].stopPropagation(); closeFileProxy(event, '${file.path.replace(/'/g, "\\'")}')"></i>`;
+            tab.innerHTML = `<i class="${getFileIcon(file.name)}"></i><span>${file.name}${sizeLabel}${unloadedLabel}</span>${file.isDirty ? ' <span class="text-yellow-500">●</span>' : ''}<i class="ri-close-line ml-2 text-xs opacity-100 hover:bg-zinc-400 dark:hover:bg-zinc-600 rounded-full p-1" data-close-path="${file.path.replace(/"/g, '&quot;')}" onclick="closeFileFromTab(this)"></i>`;
             container.appendChild(tab);
         });
     }
@@ -1409,6 +1409,16 @@ window.revealDiagnostic = async (filePath, line, column) => {
             renderTabs();
             renderSidebar();
         }
+    };
+
+    window.closeFileFromTab = (el) => {
+        const path = el.getAttribute('data-close-path');
+        closeFileProxy(null, path);
+    };
+
+    window.closeFileFromEditor = (el) => {
+        const path = el.getAttribute('data-close-path');
+        closeFileProxy(null, path);
     };
 
     // --- CONTEXT MENU ---
